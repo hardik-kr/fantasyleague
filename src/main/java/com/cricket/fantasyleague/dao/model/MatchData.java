@@ -1,13 +1,14 @@
-package com.cricket.fantasyleague.service.cricketapi.model;
+package com.cricket.fantasyleague.dao.model;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
 
-public record CricketApiMatchRow(
+public record MatchData(
         Integer id,
         LocalDate date,
         LocalTime time,
         String venue,
+        Integer matchnum,
         String result,
         String toss,
         Integer teamAId,

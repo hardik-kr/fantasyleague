@@ -52,7 +52,7 @@ public class UserMatchStats
     @JoinColumn(name = "triple_booster_id", referencedColumnName = "id")
     private Player tripleboosterplayerid ;
 
-    @ManyToMany(cascade = CascadeType.ALL,fetch = FetchType.EAGER)
+    @ManyToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JoinTable(
         name = "user_playing11", // Set your custom table name here
         joinColumns = @JoinColumn(name = "user_matchstats_id"),

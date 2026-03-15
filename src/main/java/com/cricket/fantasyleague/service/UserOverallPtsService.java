@@ -1,8 +1,14 @@
 package com.cricket.fantasyleague.service;
 
+import java.util.Map;
+
 import com.cricket.fantasyleague.entity.table.Match;
 
-public interface UserOverallPtsService 
-{
-    void calcUserOverallPointsData(Match match);
+public interface UserOverallPtsService {
+
+    /**
+     * Updates overall points for all users using the pre-computed match points map,
+     * avoiding a redundant DB re-read of UserMatchStats.
+     */
+    void calcUserOverallPointsData(Match match, Map<Integer, Double> matchPointsByUserId);
 }

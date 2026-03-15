@@ -1,5 +1,7 @@
 package com.cricket.fantasyleague.service;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -10,55 +12,60 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import com.cricket.fantasyleague.cache.LiveMatchUserCache;
 import com.cricket.fantasyleague.entity.enums.Booster;
 import com.cricket.fantasyleague.entity.enums.PlayerType;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.Player;
 import com.cricket.fantasyleague.entity.table.UserMatchStats;
-import com.cricket.fantasyleague.repository.UserMatchStatsRespository;
 
-/**
- * Calculates per-user match points in parallel.
- *
- * Key optimizations:
- *   - Player points map is passed in (no DB query; was previously a separate DB read)
- *   - Users are processed concurrently via CompletableFuture (no inter-user dependency)
- *   - Single batch saveAll at the end
- */
 @Service
 public class UserMatchStatsServiceImpl implements UserMatchStatsService {
 
     private static final Logger logger = LoggerFactory.getLogger(UserMatchStatsServiceImpl.class);
+    private static final int PARTITION_SIZE = 500;
 
-    private final UserMatchStatsRespository userMatchStatsRepository;
+    private final LiveMatchUserCache userCache;
     private final Executor taskExecutor;
 
-    public UserMatchStatsServiceImpl(UserMatchStatsRespository userMatchStatsRepository,
+    public UserMatchStatsServiceImpl(LiveMatchUserCache userCache,
                                      @Qualifier("fantasyTaskExecutor") Executor taskExecutor) {
-        this.userMatchStatsRepository = userMatchStatsRepository;
+        this.userCache = userCache;
         this.taskExecutor = taskExecutor;
     }
 
     @Override
-    public void calcMatchUserPointsData(Match match, Map<Integer, Double> playerPointsMap) {
-        List<UserMatchStats> allStats = userMatchStatsRepository.findByMatchid(match);
-        if (allStats.isEmpty()) return;
+    public Map<Integer, Double> calcMatchUserPointsData(Match match, Map<Integer, Double> playerPointsMap) {
+        List<UserMatchStats> allStats = userCache.getUserMatchStats(match.getId());
+        if (allStats.isEmpty()) return Map.of();
 
         List<UserMatchStats> userStats = allStats.stream()
                 .filter(s -> s.getUserid() != null
                         && !"admin@gmail.com".equals(s.getUserid().getEmail()))
                 .toList();
 
-        CompletableFuture<?>[] futures = userStats.stream()
-                .map(stat -> CompletableFuture.runAsync(
-                        () -> stat.setMatchpoints(calculateForUser(stat, playerPointsMap)),
-                        taskExecutor))
+        List<List<UserMatchStats>> partitions = partition(userStats, PARTITION_SIZE);
+
+        CompletableFuture<?>[] futures = partitions.stream()
+                .map(chunk -> CompletableFuture.runAsync(() -> {
+                    for (UserMatchStats stat : chunk) {
+                        stat.setMatchpoints(calculateForUser(stat, playerPointsMap));
+                    }
+                }, taskExecutor))
                 .toArray(CompletableFuture[]::new);
 
         CompletableFuture.allOf(futures).join();
 
-        userMatchStatsRepository.saveAll(allStats);
-        logger.info("User match points saved for match {}: {} users", match.getId(), userStats.size());
+        userCache.markMatchDirty(match.getId());
+
+        Map<Integer, Double> matchPointsByUser = new HashMap<>(userStats.size());
+        for (UserMatchStats stat : userStats) {
+            matchPointsByUser.put(stat.getUserid().getId(),
+                    stat.getMatchpoints() == null ? 0.0 : stat.getMatchpoints());
+        }
+
+        logger.info("User match points calculated for match {}: {} users", match.getId(), userStats.size());
+        return matchPointsByUser;
     }
 
     private Double calculateForUser(UserMatchStats stat, Map<Integer, Double> playerPointsMap) {
@@ -104,5 +111,13 @@ public class UserMatchStatsServiceImpl implements UserMatchStatsService {
             case POWER_BOWLER -> player.getType() == PlayerType.BOWLER ? points * 2 : points;
             default -> points;
         };
+    }
+
+    private <T> List<List<T>> partition(List<T> list, int size) {
+        List<List<T>> partitions = new ArrayList<>();
+        for (int i = 0; i < list.size(); i += size) {
+            partitions.add(list.subList(i, Math.min(i + size, list.size())));
+        }
+        return partitions;
     }
 }

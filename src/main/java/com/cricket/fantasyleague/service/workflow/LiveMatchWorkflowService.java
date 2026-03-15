@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.cricket.fantasyleague.cache.LiveMatchCache;
+import com.cricket.fantasyleague.cache.LiveMatchUserCache;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.service.MatchService;
 import com.cricket.fantasyleague.service.PlayerPointsService;
@@ -22,15 +23,12 @@ import com.cricket.fantasyleague.service.UserTransferService;
 /**
  * Orchestrates the full live-match pipeline.
  *
- * Old design: separate controllers calling separate methods with duplicate
- *   service instances (A/B), double HTTP fetches, and sequential user processing.
+ * Pipeline per match (all in-memory, zero DB in the hot loop):
+ *   1. Player points (cached scorecard -> 1 HTTP call per 25s window)
+ *   2. User match points (parallel across users, reads from LiveMatchUserCache)
+ *   3. User overall points (uses match-points map from step 2, no DB re-read)
  *
- * New design: single pipeline per match that flows through:
- *   1. Player points (cached scorecard → 1 HTTP call per 25s window)
- *   2. User match points (parallel across users, 0 extra DB reads for player points)
- *   3. User overall points
- *
- * Handles any number of concurrent matches dynamically (no hardcoded A/B).
+ * DB writes happen only via periodic flushToDB() calls, not on every ball.
  */
 @Service
 public class LiveMatchWorkflowService {
@@ -38,6 +36,7 @@ public class LiveMatchWorkflowService {
     private static final Logger logger = LoggerFactory.getLogger(LiveMatchWorkflowService.class);
 
     private final LiveMatchCache liveMatchCache;
+    private final LiveMatchUserCache liveMatchUserCache;
     private final MatchService matchService;
     private final PlayerPointsService playerPointsService;
     private final UserMatchStatsService userMatchStatsService;
@@ -45,12 +44,14 @@ public class LiveMatchWorkflowService {
     private final UserTransferService userTransferService;
 
     public LiveMatchWorkflowService(LiveMatchCache liveMatchCache,
+                                    LiveMatchUserCache liveMatchUserCache,
                                     MatchService matchService,
                                     PlayerPointsService playerPointsService,
                                     UserMatchStatsService userMatchStatsService,
                                     UserOverallPtsService userOverallPtsService,
                                     UserTransferService userTransferService) {
         this.liveMatchCache = liveMatchCache;
+        this.liveMatchUserCache = liveMatchUserCache;
         this.matchService = matchService;
         this.playerPointsService = playerPointsService;
         this.userMatchStatsService = userMatchStatsService;
@@ -60,7 +61,7 @@ public class LiveMatchWorkflowService {
 
     /**
      * Full pipeline entry point called by LiveMatchScheduler.
-     * For each live match: player points → user match points → user overall points.
+     * For each live match: warm cache -> player points -> user match points -> user overall points.
      */
     public void processFullPipeline() {
         List<Match> liveMatches = getLiveMatches();
@@ -81,11 +82,23 @@ public class LiveMatchWorkflowService {
     private void processMatchPipeline(Match match) {
         logger.info("Pipeline START for match {} at {}", match.getId(), LocalDateTime.now());
 
+        liveMatchUserCache.warmUp(match);
+
         Map<Integer, Double> playerPointsMap = playerPointsService.calculatePlayerPoints(match);
-        userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap);
-        userOverallPtsService.calcUserOverallPointsData(match);
+        Map<Integer, Double> matchPointsByUser = userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap);
+        userOverallPtsService.calcUserOverallPointsData(match, matchPointsByUser);
 
         logger.info("Pipeline END for match {} at {}", match.getId(), LocalDateTime.now());
+    }
+
+    /**
+     * Flushes all dirty in-memory data to the database.
+     * Called by LiveMatchScheduler on a separate, less-frequent schedule.
+     */
+    public void flushCacheToDB() {
+        if (liveMatchUserCache.hasDirtyData()) {
+            liveMatchUserCache.flushToDB();
+        }
     }
 
     public void processLivePlayerPoints() {
@@ -96,6 +109,7 @@ public class LiveMatchWorkflowService {
 
     public void processLiveUserMatchPoints() {
         for (Match match : getLiveMatches()) {
+            liveMatchUserCache.warmUp(match);
             Map<Integer, Double> pts = playerPointsService.calculatePlayerPoints(match);
             userMatchStatsService.calcMatchUserPointsData(match, pts);
         }
@@ -103,7 +117,10 @@ public class LiveMatchWorkflowService {
 
     public void processLiveUserOverallPoints() {
         for (Match match : getLiveMatches()) {
-            userOverallPtsService.calcUserOverallPointsData(match);
+            liveMatchUserCache.warmUp(match);
+            Map<Integer, Double> pts = playerPointsService.calculatePlayerPoints(match);
+            Map<Integer, Double> matchPts = userMatchStatsService.calcMatchUserPointsData(match, pts);
+            userOverallPtsService.calcUserOverallPointsData(match, matchPts);
         }
     }
 

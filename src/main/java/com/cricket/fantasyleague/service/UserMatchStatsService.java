@@ -8,8 +8,8 @@ public interface UserMatchStatsService {
 
     /**
      * Calculates match points for every user who has a team for the given match.
-     * Accepts a pre-computed playerPointsMap to avoid a redundant DB read.
-     * Processes users in parallel since they are independent.
+     * Returns a userId → matchPoints map so the caller can pass it directly
+     * to the overall-points step without a redundant DB read.
      */
-    void calcMatchUserPointsData(Match match, Map<Integer, Double> playerPointsMap);
+    Map<Integer, Double> calcMatchUserPointsData(Match match, Map<Integer, Double> playerPointsMap);
 }
