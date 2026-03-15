@@ -18,56 +18,37 @@ import com.cricket.fantasyleague.entity.table.User;
 import com.cricket.fantasyleague.entity.table.UserMatchStats;
 import com.cricket.fantasyleague.entity.table.UserMatchStatsDraft;
 import com.cricket.fantasyleague.entity.table.UserOverallStats;
-import com.cricket.fantasyleague.exception.CommonException;
 import com.cricket.fantasyleague.exception.InvalidTeamException;
 import com.cricket.fantasyleague.exception.ResourceNotFoundException;
 import com.cricket.fantasyleague.payload.dto.UserTransferDto;
-import com.cricket.fantasyleague.repository.PlayerRepository;
-import com.cricket.fantasyleague.repository.UserMatchStatsDraftRespository;
-import com.cricket.fantasyleague.repository.UserMatchStatsRespository;
-import com.cricket.fantasyleague.repository.UserOverallStatsRepository;
-import com.cricket.fantasyleague.repository.UserRepository;
-import com.cricket.fantasyleague.util.AppConstants;
 
 @Service
 public class UserTransferServiceImpl implements UserTransferService {
 
     private static final Logger logger = LoggerFactory.getLogger(UserTransferServiceImpl.class);
 
-    private final UserOverallStatsRepository userOverallStatsRepository;
-    private final UserMatchStatsRespository userMatchStatsRespository;
-    private final UserMatchStatsDraftRespository userMatchStatsDraftRespository;
+    private final UserTransferPersistServiceImpl persistService;
     private final MatchService matchService;
-    private final UserRepository userRepository;
-    private final PlayerRepository playerRepository;
     private final Executor taskExecutor;
 
-    public UserTransferServiceImpl(UserMatchStatsRespository userMatchStatsRespository,
-                                   UserMatchStatsDraftRespository userMatchStatsDraftRespository,
-                                   UserRepository userRepository,
-                                   PlayerRepository playerRepository,
+    public UserTransferServiceImpl(UserTransferPersistServiceImpl persistService,
                                    MatchService matchService,
-                                   UserOverallStatsRepository userOverallStatsRepository,
                                    @Qualifier("fantasyTaskExecutor") Executor taskExecutor) {
-        this.userMatchStatsRespository = userMatchStatsRespository;
-        this.userMatchStatsDraftRespository = userMatchStatsDraftRespository;
-        this.userOverallStatsRepository = userOverallStatsRepository;
-        this.userRepository = userRepository;
-        this.playerRepository = playerRepository;
+        this.persistService = persistService;
         this.matchService = matchService;
         this.taskExecutor = taskExecutor;
     }
 
     @Override
     public void makeTransfer(Match nextMatch, UserTransferDto userTransferDto, String userEmail) {
-        User userObj = userRepository.findByEmail(userEmail);
-        List<Player> newTeamObj = playerRepository.findAllById(userTransferDto.getUserplaying11());
+        User userObj = persistService.findUserByEmail(userEmail);
+        List<Player> newTeamObj = persistService.findPlayersById(userTransferDto.getUserplaying11());
         Match prevMatch = matchService.findPreviousMatch(nextMatch.getMatchnum());
 
         int substitution = 0;
         if (prevMatch != null) {
-            UserMatchStats userMatchStats = userMatchStatsRespository.findByMatchidAndUserid(prevMatch, userObj);
-            UserOverallStats userOverallStats = userOverallStatsRepository.findByUserid(userObj);
+            UserMatchStats userMatchStats = persistService.findMatchStatsByMatchAndUser(prevMatch, userObj);
+            UserOverallStats userOverallStats = persistService.findOverallStatsByUser(userObj);
             substitution = findCountOfSubstitution(newTeamObj, userMatchStats.getPlaying11(),
                     userOverallStats.getTransferleft());
         }
@@ -77,7 +58,7 @@ public class UserTransferServiceImpl implements UserTransferService {
         Player triplebooster_pid = getTriplePlayerId(userTransferDto.getTripleboostpid());
 
         UserMatchStatsDraft userMatchStatsDraft =
-                userMatchStatsDraftRespository.findByMatchidAndUserid(nextMatch, userObj);
+                persistService.findDraftByMatchAndUser(nextMatch, userObj);
 
         if (userMatchStatsDraft == null) {
             userMatchStatsDraft = new UserMatchStatsDraft(userObj, nextMatch,
@@ -92,7 +73,7 @@ public class UserTransferServiceImpl implements UserTransferService {
             userMatchStatsDraft.setVicecaptainid(vicecaptain);
         }
 
-        saveUserMatchTeamDraft(userMatchStatsDraft);
+        persistService.saveDraft(userMatchStatsDraft);
     }
 
     private Integer findCountOfSubstitution(List<Player> newTeam, List<Player> oldTeam,
@@ -113,20 +94,10 @@ public class UserTransferServiceImpl implements UserTransferService {
         return substitution;
     }
 
-    private void saveUserMatchTeamDraft(UserMatchStatsDraft userMatchStatsDraft) {
-        try {
-            userMatchStatsDraftRespository.save(userMatchStatsDraft);
-        } catch (Exception e) {
-            Throwable cause = extractCause(e);
-            throw new CommonException(String.format(AppConstants.error.DATABASE_ERROR,
-                    AppConstants.entity.USERMATCHSTATSDRAFT, cause.getMessage()));
-        }
-    }
-
     private Player getTriplePlayerId(Integer tripleboostpid) {
         if (tripleboostpid == null) return null;
 
-        Player triple_pid = playerRepository.getReferenceById(tripleboostpid);
+        Player triple_pid = persistService.getPlayerReference(tripleboostpid);
         if (triple_pid == null) {
             throw new ResourceNotFoundException("Invalid triple booster player in playing11");
         }
@@ -134,7 +105,7 @@ public class UserTransferServiceImpl implements UserTransferService {
     }
 
     private Player validateViceCaptain(Integer vicecaptainid) {
-        Player vicecaptain = playerRepository.getReferenceById(vicecaptainid);
+        Player vicecaptain = persistService.getPlayerReference(vicecaptainid);
         if (vicecaptain == null) {
             throw new ResourceNotFoundException("Invalid vicecaptain in playing11");
         }
@@ -142,7 +113,7 @@ public class UserTransferServiceImpl implements UserTransferService {
     }
 
     private Player validateCaptain(Integer captainid) {
-        Player captain = playerRepository.getReferenceById(captainid);
+        Player captain = persistService.getPlayerReference(captainid);
         if (captain == null) {
             throw new ResourceNotFoundException("Invalid captain in playing11");
         }
@@ -192,7 +163,7 @@ public class UserTransferServiceImpl implements UserTransferService {
 
     @Override
     public void lockMatchTeam(Match currMatch) {
-        List<User> allUser = userRepository.findAll();
+        List<User> allUser = persistService.findAllUsers();
 
         CompletableFuture<?>[] futures = allUser.stream()
                 .map(user -> CompletableFuture.runAsync(
@@ -207,7 +178,7 @@ public class UserTransferServiceImpl implements UserTransferService {
 
         try {
             UserMatchStatsDraft userMatchDraft =
-                    userMatchStatsDraftRespository.findByMatchidAndUserid(currMatch, user);
+                    persistService.findDraftByMatchAndUser(currMatch, user);
             if (userMatchDraft == null) {
                 logger.warn("No draft team found for user {} match {}", user.getEmail(), currMatch.getId());
                 return;
@@ -219,41 +190,13 @@ public class UserTransferServiceImpl implements UserTransferService {
                     userMatchDraft.getVicecaptainid(), userMatchDraft.getTripleboosterplayerid(),
                     userMatchDraft.getPlaying11());
 
-            UserOverallStats userOverall = userOverallStatsRepository.findByUserid(user);
+            UserOverallStats userOverall = persistService.findOverallStatsByUser(user);
             userOverall.setPrevpoints(userOverall.getTotalpoints());
 
-            saveUserPreviousPts(userOverall);
-            saveFinalTeam(userMatchStats);
+            persistService.saveOverallStats(userOverall);
+            persistService.saveMatchStats(userMatchStats);
         } catch (Exception e) {
             logger.error("Failed to lock team for user {}: {}", user.getEmail(), e.getMessage(), e);
         }
-    }
-
-    private void saveFinalTeam(UserMatchStats userMatchStats) {
-        try {
-            userMatchStatsRespository.save(userMatchStats);
-        } catch (Exception e) {
-            Throwable cause = extractCause(e);
-            throw new CommonException(String.format(AppConstants.error.DATABASE_ERROR,
-                    AppConstants.entity.USERMATCHSTATSDRAFT, cause.getMessage()));
-        }
-    }
-
-    private void saveUserPreviousPts(UserOverallStats userOverallStatsObj) {
-        try {
-            userOverallStatsRepository.save(userOverallStatsObj);
-        } catch (Exception e) {
-            Throwable cause = extractCause(e);
-            throw new CommonException(String.format(AppConstants.error.DATABASE_ERROR,
-                    AppConstants.entity.USEROVERALLPOINTS, cause.getMessage()));
-        }
-    }
-
-    private Throwable extractCause(Exception e) {
-        Throwable cause = e.getCause();
-        if (cause != null && cause.getCause() != null) {
-            return cause.getCause();
-        }
-        return cause != null ? cause : e;
     }
 }

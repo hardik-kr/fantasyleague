@@ -2,7 +2,6 @@ package com.cricket.fantasyleague.cache;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
@@ -12,24 +11,17 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import com.cricket.fantasyleague.dao.CricketMasterDataDao;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.Player;
 import com.cricket.fantasyleague.entity.table.PlayerPoints;
 import com.cricket.fantasyleague.exception.CommonException;
 import com.cricket.fantasyleague.payload.fullscorecarddto.FullScorecardDto;
-import com.cricket.fantasyleague.repository.PlayerRepository;
 import com.cricket.fantasyleague.service.MatchService;
 import com.cricket.fantasyleague.util.AppConstants;
 
-/**
- * Centralized in-memory cache for live match processing.
- * Eliminates redundant HTTP calls and DB queries during each polling cycle.
- *
- * TTLs are tuned for live-match polling (~60s intervals):
- *   - Scorecard:       25s  (fresh data each cycle, avoids double-fetch within a cycle)
- *   - Today's matches: 2min (match list is stable within a day)
- *   - Team players:    30min(roster changes are rare during a tournament)
- */
+import jakarta.persistence.EntityManager;
+
 @Service
 public class LiveMatchCache {
 
@@ -41,7 +33,8 @@ public class LiveMatchCache {
 
     private final RestTemplate restTemplate;
     private final MatchService matchService;
-    private final PlayerRepository playerRepository;
+    private final CricketMasterDataDao dao;
+    private final EntityManager em;
 
     private final ConcurrentHashMap<Integer, CachedEntry<FullScorecardDto>> scorecardCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, List<PlayerPoints>> playerPointsRecords = new ConcurrentHashMap<>();
@@ -50,13 +43,13 @@ public class LiveMatchCache {
 
     public LiveMatchCache(RestTemplate restTemplate,
                           MatchService matchService,
-                          PlayerRepository playerRepository) {
+                          CricketMasterDataDao dao,
+                          EntityManager em) {
         this.restTemplate = restTemplate;
         this.matchService = matchService;
-        this.playerRepository = playerRepository;
+        this.dao = dao;
+        this.em = em;
     }
-
-    // ── Scorecard (from Cricket API via HTTP) ──
 
     public FullScorecardDto getScorecard(Integer matchId) {
         CachedEntry<FullScorecardDto> entry = scorecardCache.get(matchId);
@@ -87,8 +80,6 @@ public class LiveMatchCache {
         return body;
     }
 
-    // ── Today's Matches (from DB, cached) ──
-
     public List<Match> getTodayMatches() {
         CachedEntry<List<Match>> entry = todayMatchesEntry;
         if (entry != null && !entry.isExpired(TODAY_MATCHES_TTL_MS)) {
@@ -100,20 +91,18 @@ public class LiveMatchCache {
         return matches;
     }
 
-    // ── Team Players (from DB, cached) ──
-
     public List<Player> getTeamPlayers(String teamName) {
         CachedEntry<List<Player>> entry = teamPlayersCache.get(teamName);
         if (entry != null && !entry.isExpired(TEAM_PLAYERS_TTL_MS)) {
             return entry.value;
         }
 
-        List<Player> players = playerRepository.findByTeamidName(teamName);
+        List<Player> players = dao.findPlayersByTeamName(teamName).stream()
+                .map(pd -> em.find(Player.class, pd.id()))
+                .toList();
         teamPlayersCache.put(teamName, new CachedEntry<>(players));
         return players;
     }
-
-    // ── PlayerPoints Records (managed externally by PlayerPointsServiceImpl) ──
 
     public List<PlayerPoints> getPlayerPointsRecords(Integer matchId) {
         return playerPointsRecords.get(matchId);
@@ -122,8 +111,6 @@ public class LiveMatchCache {
     public void putPlayerPointsRecords(Integer matchId, List<PlayerPoints> records) {
         playerPointsRecords.put(matchId, records);
     }
-
-    // ── Eviction ──
 
     public void evictMatch(Integer matchId) {
         scorecardCache.remove(matchId);

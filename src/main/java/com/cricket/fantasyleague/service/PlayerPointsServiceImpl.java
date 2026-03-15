@@ -5,7 +5,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,7 +14,6 @@ import com.cricket.fantasyleague.cache.LiveMatchCache;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.Player;
 import com.cricket.fantasyleague.entity.table.PlayerPoints;
-import com.cricket.fantasyleague.exception.CommonException;
 import com.cricket.fantasyleague.exception.ResourceNotFoundException;
 import com.cricket.fantasyleague.payload.fullscorecarddto.BatterDto;
 import com.cricket.fantasyleague.payload.fullscorecarddto.BowlerDto;
@@ -24,38 +22,22 @@ import com.cricket.fantasyleague.payload.fullscorecarddto.FullScorecardDto;
 import com.cricket.fantasyleague.payload.fullscorecarddto.InningDto;
 import com.cricket.fantasyleague.payload.fullscorecarddto.MatchMetaDataDto;
 import com.cricket.fantasyleague.payload.fullscorecarddto.PlayerDto;
-import com.cricket.fantasyleague.repository.PlayerPointsRepository;
-import com.cricket.fantasyleague.repository.PlayerRepository;
-import com.cricket.fantasyleague.util.AppConstants;
 import com.cricket.fantasyleague.util.FantasyPointSystem;
 
-/**
- * Stateless singleton that calculates player fantasy points.
- * All per-match state lives in {@link LiveMatchCache}, not in instance fields.
- *
- * Key optimizations over the old prototype-scoped version:
- *   - Single HTTP call per cycle (scorecard is cached with 25s TTL)
- *   - PlayerPoints records cached in memory (DB read only on first call per match)
- *   - Team player lists cached (30min TTL)
- *   - Returns a playerId→points map so downstream services skip a DB roundtrip
- */
 @Service
 public class PlayerPointsServiceImpl implements PlayerPointsService {
 
     private static final Logger logger = LoggerFactory.getLogger(PlayerPointsServiceImpl.class);
 
     private final LiveMatchCache liveMatchCache;
-    private final PlayerPointsRepository playerPointsRepository;
-    private final PlayerRepository playerRepository;
+    private final PlayerPointsPersistServiceImpl persistService;
     private final MatchService matchService;
 
     public PlayerPointsServiceImpl(LiveMatchCache liveMatchCache,
-                                   PlayerPointsRepository playerPointsRepository,
-                                   PlayerRepository playerRepository,
+                                   PlayerPointsPersistServiceImpl persistService,
                                    MatchService matchService) {
         this.liveMatchCache = liveMatchCache;
-        this.playerPointsRepository = playerPointsRepository;
-        this.playerRepository = playerRepository;
+        this.persistService = persistService;
         this.matchService = matchService;
     }
 
@@ -82,7 +64,7 @@ public class PlayerPointsServiceImpl implements PlayerPointsService {
         accumulateInningsPoints(scorecard.getInningsA(), byName);
         accumulateInningsPoints(scorecard.getInningsB(), byName);
 
-        persistPlayerPoints(records);
+        persistService.saveAllPlayerPoints(records);
 
         Map<Integer, Double> pointsMap = new HashMap<>(records.size());
         for (PlayerPoints pp : records) {
@@ -101,7 +83,7 @@ public class PlayerPointsServiceImpl implements PlayerPointsService {
             return cached;
         }
 
-        List<PlayerPoints> fromDb = playerPointsRepository.findByMatchid(match);
+        List<PlayerPoints> fromDb = persistService.findPlayerPointsByMatch(match);
         if (!fromDb.isEmpty()) {
             liveMatchCache.putPlayerPointsRecords(match.getId(), fromDb);
             return fromDb;
@@ -113,7 +95,7 @@ public class PlayerPointsServiceImpl implements PlayerPointsService {
             newRecords.add(new PlayerPoints(match, player, FantasyPointSystem.others.IN_PLAYING11));
         }
 
-        persistPlayerPoints(newRecords);
+        persistService.saveAllPlayerPoints(newRecords);
         liveMatchCache.putPlayerPointsRecords(match.getId(), newRecords);
         return newRecords;
     }
@@ -148,7 +130,7 @@ public class PlayerPointsServiceImpl implements PlayerPointsService {
             String key = normalize(dto.getName());
             Player player = teamIndex.get(key);
             if (player == null) {
-                player = playerRepository.findByNameTeamidName(dto.getName(), teamName)
+                player = persistService.findPlayerByNameAndTeam(dto.getName(), teamName)
                         .orElseThrow(() -> new ResourceNotFoundException("Player", "name", dto.getName()));
             }
             target.add(player);
@@ -276,17 +258,5 @@ public class PlayerPointsServiceImpl implements PlayerPointsService {
 
     private String normalize(String name) {
         return name == null ? "" : name.trim().toLowerCase();
-    }
-
-    private void persistPlayerPoints(List<PlayerPoints> records) {
-        try {
-            playerPointsRepository.saveAll(records);
-        } catch (Exception e) {
-            Throwable cause = e.getCause() == null ? e : e.getCause();
-            throw new CommonException(String.format(
-                    AppConstants.error.DATABASE_ERROR,
-                    AppConstants.entity.PLAYERPOINTS,
-                    cause.getMessage()));
-        }
     }
 }

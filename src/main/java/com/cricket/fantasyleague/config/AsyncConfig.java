@@ -12,10 +12,12 @@ public class AsyncConfig {
 
     @Bean(name = "fantasyTaskExecutor")
     public Executor fantasyTaskExecutor() {
+        int cpuCount = Runtime.getRuntime().availableProcessors();
+
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(4);
-        executor.setMaxPoolSize(16);
-        executor.setQueueCapacity(100);
+        executor.setCorePoolSize(cpuCount);
+        executor.setMaxPoolSize(cpuCount * 2);
+        executor.setQueueCapacity(500);
         executor.setThreadNamePrefix("fantasy-");
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.initialize();
