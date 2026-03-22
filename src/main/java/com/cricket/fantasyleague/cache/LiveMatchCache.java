@@ -2,25 +2,25 @@ package com.cricket.fantasyleague.cache;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import com.cricket.fantasyleague.dao.CricketEntityMapper;
 import com.cricket.fantasyleague.dao.CricketMasterDataDao;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.Player;
 import com.cricket.fantasyleague.entity.table.PlayerPoints;
 import com.cricket.fantasyleague.exception.CommonException;
 import com.cricket.fantasyleague.payload.fullscorecarddto.FullScorecardDto;
-import com.cricket.fantasyleague.service.MatchService;
-import com.cricket.fantasyleague.util.AppConstants;
-
-import jakarta.persistence.EntityManager;
+import com.cricket.fantasyleague.service.match.MatchService;
 
 @Service
 public class LiveMatchCache {
@@ -34,21 +34,29 @@ public class LiveMatchCache {
     private final RestTemplate restTemplate;
     private final MatchService matchService;
     private final CricketMasterDataDao dao;
-    private final EntityManager em;
+    private final CricketEntityMapper cricketEntities;
+    private final String cricketScorecardFullUrlPrefix;
 
     private final ConcurrentHashMap<Integer, CachedEntry<FullScorecardDto>> scorecardCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, List<PlayerPoints>> playerPointsRecords = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CachedEntry<List<Player>>> teamPlayersCache = new ConcurrentHashMap<>();
+    private final Set<Integer> dirtyPlayerPointsMatchIds = ConcurrentHashMap.newKeySet();
     private volatile CachedEntry<List<Match>> todayMatchesEntry;
 
     public LiveMatchCache(RestTemplate restTemplate,
                           MatchService matchService,
                           CricketMasterDataDao dao,
-                          EntityManager em) {
+                          CricketEntityMapper cricketEntities,
+                          @Value("${cricketapi.base-url:http://localhost:9090}") String cricketApiBaseUrl) {
         this.restTemplate = restTemplate;
         this.matchService = matchService;
         this.dao = dao;
-        this.em = em;
+        this.cricketEntities = cricketEntities;
+        String base = cricketApiBaseUrl.trim();
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        this.cricketScorecardFullUrlPrefix = base + "/scorecard/full/";
     }
 
     public FullScorecardDto getScorecard(Integer matchId) {
@@ -66,7 +74,7 @@ public class LiveMatchCache {
 
     private FullScorecardDto fetchScorecardFromApi(Integer matchId) {
         ResponseEntity<FullScorecardDto> response = restTemplate.getForEntity(
-                AppConstants.URI.SCORECARD_FULL + matchId, FullScorecardDto.class);
+                cricketScorecardFullUrlPrefix + matchId, FullScorecardDto.class);
 
         if (response.getStatusCode() != HttpStatus.OK
                 && response.getStatusCode() != HttpStatus.ACCEPTED) {
@@ -98,7 +106,8 @@ public class LiveMatchCache {
         }
 
         List<Player> players = dao.findPlayersByTeamName(teamName).stream()
-                .map(pd -> em.find(Player.class, pd.id()))
+                .map(cricketEntities::toPlayer)
+                .filter(p -> p != null)
                 .toList();
         teamPlayersCache.put(teamName, new CachedEntry<>(players));
         return players;
@@ -112,14 +121,28 @@ public class LiveMatchCache {
         playerPointsRecords.put(matchId, records);
     }
 
+    public void markPlayerPointsDirty(Integer matchId) {
+        dirtyPlayerPointsMatchIds.add(matchId);
+    }
+
+    public boolean isDirtyPlayerPoints(Integer matchId) {
+        return dirtyPlayerPointsMatchIds.contains(matchId);
+    }
+
+    public void clearPlayerPointsDirty(Integer matchId) {
+        dirtyPlayerPointsMatchIds.remove(matchId);
+    }
+
     public void evictMatch(Integer matchId) {
         scorecardCache.remove(matchId);
         playerPointsRecords.remove(matchId);
+        dirtyPlayerPointsMatchIds.remove(matchId);
     }
 
     public void evictAll() {
         scorecardCache.clear();
         playerPointsRecords.clear();
+        dirtyPlayerPointsMatchIds.clear();
         teamPlayersCache.clear();
         todayMatchesEntry = null;
     }

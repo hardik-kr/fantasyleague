@@ -1,4 +1,4 @@
-package com.cricket.fantasyleague.service;
+package com.cricket.fantasyleague.service.user;
 
 import java.util.List;
 
@@ -27,9 +27,13 @@ public class UserServiceImpl implements UserService, UserDetailsService {
 
     @Override
     public void createUser(UserDto inpuser) {
-        User isexist = persistService.findByEmail(inpuser.getEmail());
-        if (isexist != null) {
+        User existByEmail = persistService.findByEmail(inpuser.getEmail());
+        if (existByEmail != null) {
             throw new ResourceAlreadyExist(AppConstants.user.ALREADY_EXIST, "email", inpuser.getEmail());
+        }
+        User existByUsername = persistService.findByUsername(inpuser.getUsername());
+        if (existByUsername != null) {
+            throw new ResourceAlreadyExist(AppConstants.user.ALREADY_EXIST, "username", inpuser.getUsername());
         }
         User user = buildUserFromDto(inpuser);
         persistService.saveUser(user);
@@ -46,8 +50,12 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         User userobj = persistService.findByEmail(username);
-        if (userobj == null)
-            throw new BadCredentialsException(String.format("Invalid Username not found : %s", username));
+        if (userobj == null) {
+            userobj = persistService.findByUsername(username);
+        }
+        if (userobj == null) {
+            throw new BadCredentialsException(String.format(AppConstants.user.USER_NOT_FOUND, username));
+        }
         return buildDtoFromUser(userobj);
     }
 
@@ -63,9 +71,11 @@ public class UserServiceImpl implements UserService, UserDetailsService {
 
     private User buildUserFromDto(UserDto inpuser) {
         User userobj = new User();
+        userobj.setUsername(inpuser.getUsername());
+        userobj.setFirstname(inpuser.getFirstname());
+        userobj.setLastname(inpuser.getLastname());
         userobj.setEmail(inpuser.getEmail());
         userobj.setFavteam(inpuser.getFavteam());
-        userobj.setName(inpuser.getName());
         userobj.setPassword(new BCryptPasswordEncoder().encode(inpuser.getPassword()));
         userobj.setPhonenumber(inpuser.getPhonenumber());
         userobj.setRole(UserRole.USER);
@@ -74,9 +84,11 @@ public class UserServiceImpl implements UserService, UserDetailsService {
 
     private UserDto buildDtoFromUser(User userobj) {
         UserDto userdtoobj = new UserDto();
+        userdtoobj.setUsername(userobj.getUsername());
+        userdtoobj.setFirstname(userobj.getFirstname());
+        userdtoobj.setLastname(userobj.getLastname());
         userdtoobj.setEmail(userobj.getEmail());
         userdtoobj.setFavteam(userobj.getFavteam());
-        userdtoobj.setName(userobj.getName());
         userdtoobj.setPassword(userobj.getPassword());
         userdtoobj.setPhonenumber(userobj.getPhonenumber());
         userdtoobj.setRole(userobj.getRole());

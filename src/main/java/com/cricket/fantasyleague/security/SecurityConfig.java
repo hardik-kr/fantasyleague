@@ -38,12 +38,11 @@ public class SecurityConfig
 
     @Bean
     @Profile("!disableSecurity")
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception 
+    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception 
     {
         http.csrf(csrf->csrf.disable())
             .cors(cors->cors.disable())
-            .authorizeHttpRequests(auth->auth.requestMatchers("/auth/login","/auth/signup","/api/loadtest/**").permitAll() 
-            .requestMatchers("/test/**").hasAnyAuthority(UserRole.ADMIN.name())
+            .authorizeHttpRequests(auth->auth.requestMatchers("/auth/login","/auth/signup","/api/loadtest/**","/api/masterdata/**","/test/**").permitAll()
             .requestMatchers("/season/**").hasAnyAuthority(UserRole.USER.name())
             .anyRequest().authenticated())
             .exceptionHandling(ex->ex.authenticationEntryPoint(point)
@@ -56,7 +55,7 @@ public class SecurityConfig
 
     @Bean
     @Profile("disableSecurity")
-    public SecurityFilterChain disableSecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain disableSecurityFilterChain(HttpSecurity http) throws Exception {
         http.csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.disable())
                 .authorizeHttpRequests(auth -> auth.requestMatchers("/**").permitAll()) // Allow all requests
@@ -69,7 +68,7 @@ public class SecurityConfig
 
 
     @Bean
-    public DaoAuthenticationProvider daoAuthenticationProvider()
+    DaoAuthenticationProvider daoAuthenticationProvider()
     {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService) ;
         provider.setPasswordEncoder(passwordEncoder);

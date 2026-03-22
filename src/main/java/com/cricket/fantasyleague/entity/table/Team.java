@@ -14,14 +14,16 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "team")
+@Table(name = "teams", catalog = "cricketapi")
 public class Team 
 {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id ;
-    @Column(length = 40)
+    @Column(length = 50)
     private String name ;
-    @Column(length = 4)
-    private String inital ;       
+    @Column(length = 5, name = "short_name")
+    private String shortName ;
+    @Column(name = "league_id")
+    private Integer leagueId ;
 }

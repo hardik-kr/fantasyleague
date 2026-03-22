@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.cricket.fantasyleague.service.PipelineBenchmarkService;
+import com.cricket.fantasyleague.service.benchmark.PipelineBenchmarkService;
 
 /**
  * Load-test endpoints for verifying pipeline scalability.

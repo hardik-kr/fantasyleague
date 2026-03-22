@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class BowlerDto 
 {
-    private String name ;
+    private Integer PlayerId ;
     private Integer ballbowl ;     
     private Integer maidens ;
     private Integer runs ;

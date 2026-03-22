@@ -21,10 +21,16 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class UserDto implements UserDetails
 {
-    @NotEmpty(message = "Name must not be empty")
-    @Size(min = 3, message = "Name must have at least 3 characters")
-    private String name ;
-    
+    @NotEmpty(message = "Username must not be empty")
+    @Size(min = 3, message = "Username must have at least 3 characters")
+    private String username ;
+
+    @NotEmpty(message = "First name must not be empty")
+    @Size(min = 2, message = "First name must have at least 2 characters")
+    private String firstname ;
+
+    private String lastname ;
+
     @NotEmpty(message = "Email cannot be empty")
     @Email(message = "Invalid email address")
     private String email ;
@@ -48,7 +54,7 @@ public class UserDto implements UserDetails
     }
     @Override
     public String getUsername() {
-        return this.email ;
+        return this.username ;
     }
     @Override
     public boolean isAccountNonExpired() {

@@ -1,4 +1,4 @@
-package com.cricket.fantasyleague.service;
+package com.cricket.fantasyleague.service.benchmark;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -16,23 +16,30 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.cricket.fantasyleague.cache.LiveMatchUserCache;
+import com.cricket.fantasyleague.dao.CricketEntityMapper;
 import com.cricket.fantasyleague.dao.CricketMasterDataDao;
 import com.cricket.fantasyleague.dao.model.PlayerData;
 import com.cricket.fantasyleague.dao.model.TeamData;
 import com.cricket.fantasyleague.entity.enums.Booster;
 import com.cricket.fantasyleague.entity.enums.PlayerType;
 import com.cricket.fantasyleague.entity.enums.UserRole;
+import com.cricket.fantasyleague.entity.table.FantasyPlayerConfig;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.Player;
 import com.cricket.fantasyleague.entity.table.Team;
 import com.cricket.fantasyleague.entity.table.User;
 import com.cricket.fantasyleague.entity.table.UserMatchStats;
 import com.cricket.fantasyleague.entity.table.UserOverallStats;
+import com.cricket.fantasyleague.repository.FantasyPlayerConfigRepository;
 import com.cricket.fantasyleague.repository.UserMatchStatsRespository;
 import com.cricket.fantasyleague.repository.UserOverallStatsRepository;
 import com.cricket.fantasyleague.repository.UserRepository;
 
 import jakarta.persistence.EntityManager;
+
+import com.cricket.fantasyleague.service.match.MatchService;
+import com.cricket.fantasyleague.service.usermatchstats.UserMatchStatsService;
+import com.cricket.fantasyleague.service.useroverallpts.UserOverallPtsService;
 
 @Service
 public class PipelineBenchmarkService {
@@ -43,29 +50,38 @@ public class PipelineBenchmarkService {
 
     private final EntityManager em;
     private final CricketMasterDataDao dao;
+    private final CricketEntityMapper cricketEntities;
+    private final MatchService matchService;
     private final UserRepository userRepository;
     private final UserMatchStatsRespository userMatchStatsRepository;
     private final UserOverallStatsRepository userOverallStatsRepository;
     private final UserMatchStatsService userMatchStatsService;
     private final UserOverallPtsService userOverallPtsService;
     private final LiveMatchUserCache liveMatchUserCache;
+    private final FantasyPlayerConfigRepository fantasyPlayerConfigRepository;
 
     public PipelineBenchmarkService(EntityManager em,
                                     CricketMasterDataDao dao,
+                                    CricketEntityMapper cricketEntities,
+                                    MatchService matchService,
                                     UserRepository userRepository,
                                     UserMatchStatsRespository userMatchStatsRepository,
                                     UserOverallStatsRepository userOverallStatsRepository,
                                     UserMatchStatsService userMatchStatsService,
                                     UserOverallPtsService userOverallPtsService,
-                                    LiveMatchUserCache liveMatchUserCache) {
+                                    LiveMatchUserCache liveMatchUserCache,
+                                    FantasyPlayerConfigRepository fantasyPlayerConfigRepository) {
         this.em = em;
         this.dao = dao;
+        this.cricketEntities = cricketEntities;
+        this.matchService = matchService;
         this.userRepository = userRepository;
         this.userMatchStatsRepository = userMatchStatsRepository;
         this.userOverallStatsRepository = userOverallStatsRepository;
         this.userMatchStatsService = userMatchStatsService;
         this.userOverallPtsService = userOverallPtsService;
         this.liveMatchUserCache = liveMatchUserCache;
+        this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
     }
 
     // ── Seed ──
@@ -74,9 +90,9 @@ public class PipelineBenchmarkService {
     public Map<String, Object> seed(int userCount) {
         long start = System.currentTimeMillis();
 
-        Team teamA = new Team(null, "LoadTestTeamA", "LTA");
+        Team teamA = new Team(null, "LoadTestTeamA", "LTA", null);
         em.persist(teamA);
-        Team teamB = new Team(null, "LoadTestTeamB", "LTB");
+        Team teamB = new Team(null, "LoadTestTeamB", "LTB", null);
         em.persist(teamB);
         em.flush();
 
@@ -86,8 +102,22 @@ public class PipelineBenchmarkService {
         }
         em.flush();
 
-        Match match = new Match(ID_BASE, LocalDate.now(), LocalTime.of(14, 0),
-                "LoadTest Venue", 999, null, null, teamA, teamB);
+        createFantasyConfigs(allPlayers);
+
+        Match match = new Match();
+        match.setId(ID_BASE);
+        match.setDate(LocalDate.now());
+        match.setTime(LocalTime.of(14, 0));
+        match.setTimezone("Asia/Kolkata");
+        match.setVenue("LoadTest Venue");
+        match.setMatchtype("LoadTest");
+        match.setIsMatchComplete(false);
+        match.setResult(null);
+        match.setToss(null);
+        match.setLeagueId(null);
+        match.setMomPlayerId(null);
+        match.setTeamA(teamA);
+        match.setTeamB(teamB);
         em.persist(match);
         em.flush();
 
@@ -147,7 +177,7 @@ public class PipelineBenchmarkService {
     // ── Benchmark ──
 
     public Map<String, Object> benchmark(int matchId, int iterations) {
-        Match match = em.find(Match.class, matchId);
+        Match match = matchService.findMatchById(matchId);
         if (match == null) {
             throw new IllegalArgumentException("Match not found: " + matchId);
         }
@@ -283,19 +313,20 @@ public class PipelineBenchmarkService {
                 .toList();
         userRepository.deleteAll(users);
 
+        List<FantasyPlayerConfig> loadTestConfigs = fantasyPlayerConfigRepository.findAll().stream()
+                .filter(c -> c.getPlayerId() != null && c.getPlayerId() >= ID_BASE)
+                .toList();
+        fantasyPlayerConfigRepository.deleteAll(loadTestConfigs);
+
         Match match = em.find(Match.class, ID_BASE);
         if (match != null) em.remove(match);
 
-        List<PlayerData> loadTestPlayersA = dao.findPlayersByTeamName("LoadTestTeamA");
-        List<PlayerData> loadTestPlayersB = dao.findPlayersByTeamName("LoadTestTeamB");
         int deletedPlayers = 0;
-        for (PlayerData pd : loadTestPlayersA) {
-            Player p = em.find(Player.class, pd.id());
-            if (p != null) { em.remove(p); deletedPlayers++; }
-        }
-        for (PlayerData pd : loadTestPlayersB) {
-            Player p = em.find(Player.class, pd.id());
-            if (p != null) { em.remove(p); deletedPlayers++; }
+        for (PlayerData pd : dao.findAllPlayers()) {
+            if (pd.name() != null && pd.name().startsWith("LT_Player")) {
+                Player p = em.find(Player.class, pd.id());
+                if (p != null) { em.remove(p); deletedPlayers++; }
+            }
         }
 
         for (TeamData td : dao.findAllTeams()) {
@@ -320,25 +351,41 @@ public class PipelineBenchmarkService {
         String teamBName = match.getTeamB().getName();
         List<Player> players = new ArrayList<>();
         for (PlayerData pd : dao.findPlayersByTeamName(teamAName)) {
-            players.add(em.find(Player.class, pd.id()));
+            players.add(cricketEntities.toPlayer(pd));
         }
         for (PlayerData pd : dao.findPlayersByTeamName(teamBName)) {
-            players.add(em.find(Player.class, pd.id()));
+            players.add(cricketEntities.toPlayer(pd));
         }
         return players;
     }
 
     private List<Player> createPlayers(Team teamA, Team teamB) {
-        PlayerType[] types = { PlayerType.KEEPER, PlayerType.BATTER, PlayerType.BATTER,
+        PlayerType[] roles = { PlayerType.KEEPER, PlayerType.BATTER, PlayerType.BATTER,
                 PlayerType.BATTER, PlayerType.ALLROUNDER, PlayerType.ALLROUNDER,
                 PlayerType.BOWLER, PlayerType.BOWLER, PlayerType.BOWLER,
                 PlayerType.BATTER, PlayerType.BOWLER, PlayerType.ALLROUNDER };
         List<Player> players = new ArrayList<>(24);
         for (int i = 0; i < 12; i++) {
-            players.add(new Player("LT_PlayerA_" + i, teamA, 8.0 + i * 0.5, types[i], i % 3 == 0, false));
-            players.add(new Player("LT_PlayerB_" + i, teamB, 8.0 + i * 0.5, types[i], i % 3 == 0, false));
+            Player pA = new Player(null, "LT_PlayerA_" + i, roles[i]);
+            players.add(pA);
+            Player pB = new Player(null, "LT_PlayerB_" + i, roles[i]);
+            players.add(pB);
         }
         return players;
+    }
+
+    private void createFantasyConfigs(List<Player> allPlayers) {
+        PlayerType[] types = { PlayerType.KEEPER, PlayerType.BATTER, PlayerType.BATTER,
+                PlayerType.BATTER, PlayerType.ALLROUNDER, PlayerType.ALLROUNDER,
+                PlayerType.BOWLER, PlayerType.BOWLER, PlayerType.BOWLER,
+                PlayerType.BATTER, PlayerType.BOWLER, PlayerType.ALLROUNDER };
+        for (int i = 0; i < allPlayers.size(); i++) {
+            Player p = allPlayers.get(i);
+            FantasyPlayerConfig cfg = new FantasyPlayerConfig(
+                    p.getId(), null, 8.0 + (i / 2) * 0.5,
+                    types[i % 12], i % 3 == 0, false);
+            fantasyPlayerConfigRepository.save(cfg);
+        }
     }
 
     private List<User> createUsers(int count) {
@@ -346,7 +393,9 @@ public class PipelineBenchmarkService {
         for (int i = 0; i < count; i++) {
             User u = new User();
             u.setId(ID_BASE + i);
-            u.setName("loadtest_" + i);
+            u.setUsername("loadtest_" + i);
+            u.setFirstname("Load");
+            u.setLastname("Test" + i);
             u.setEmail("lt" + i + "@test.com");
             u.setPassword("pwd");
             u.setPhonenumber("0000000000");

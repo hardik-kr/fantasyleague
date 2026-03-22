@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class BatterDto 
 {
-    private String name ;
+    private Integer PlayerId ;
     private String dismissal ;
     private Integer runs ;
     private Integer balls ;

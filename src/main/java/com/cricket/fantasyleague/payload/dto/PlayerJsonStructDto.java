@@ -1,7 +1,6 @@
 package com.cricket.fantasyleague.payload.dto;
 
 import com.cricket.fantasyleague.entity.enums.PlayerType;
-import com.cricket.fantasyleague.entity.table.Team;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -13,7 +12,8 @@ import lombok.NoArgsConstructor;
 public class PlayerJsonStructDto 
 {
     private String playerName ;
-    private Team teamId ;
+    private Integer teamId ;
+    private Integer leagueId ;
     private Double credit ;
     private PlayerType playerType ;
     private Boolean overseas ;

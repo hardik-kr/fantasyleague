@@ -1,31 +1,409 @@
 package com.cricket.fantasyleague.controller;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.cricket.fantasyleague.cache.LiveMatchCache;
+import com.cricket.fantasyleague.cache.LiveMatchUserCache;
+import com.cricket.fantasyleague.entity.table.Match;
+import com.cricket.fantasyleague.entity.table.Player;
+import com.cricket.fantasyleague.entity.table.PlayerPoints;
+import com.cricket.fantasyleague.entity.table.UserMatchStats;
+import com.cricket.fantasyleague.entity.table.UserOverallStats;
 import com.cricket.fantasyleague.payload.ApiResponse;
+import com.cricket.fantasyleague.repository.PlayerPointsRepository;
+import com.cricket.fantasyleague.repository.UserMatchStatsRespository;
+import com.cricket.fantasyleague.repository.UserOverallStatsRepository;
+import com.cricket.fantasyleague.service.match.MatchService;
+import com.cricket.fantasyleague.service.masterdata.MasterDataConfigService;
+import com.cricket.fantasyleague.service.playerpoints.LiveMatchPlayerPointsService;
+import com.cricket.fantasyleague.service.testdata.TestDataSeeder;
+import com.cricket.fantasyleague.service.usermatchstats.UserMatchStatsService;
+import com.cricket.fantasyleague.service.useroverallpts.UserOverallPtsService;
+import com.cricket.fantasyleague.service.usertransfer.UserTransferService;
+import com.cricket.fantasyleague.service.workflow.LiveMatchWorkflowService;
 import com.cricket.fantasyleague.service.workflow.TestWorkflowService;
 
 @RestController
 @RequestMapping("/test")
-public class TestController
-{
-    private final TestWorkflowService testWorkflowService;
+public class TestController {
 
-    public TestController(TestWorkflowService testWorkflowService) {
+    private final TestWorkflowService testWorkflowService;
+    private final LiveMatchWorkflowService liveMatchWorkflowService;
+    private final MatchService matchService;
+    private final LiveMatchPlayerPointsService playerPointsService;
+    private final UserMatchStatsService userMatchStatsService;
+    private final UserOverallPtsService userOverallPtsService;
+    private final UserTransferService userTransferService;
+    private final MasterDataConfigService masterDataConfigService;
+    private final TestDataSeeder testDataSeeder;
+    private final LiveMatchCache liveMatchCache;
+    private final LiveMatchUserCache liveMatchUserCache;
+    private final PlayerPointsRepository playerPointsRepository;
+    private final UserMatchStatsRespository userMatchStatsRepository;
+    private final UserOverallStatsRepository userOverallStatsRepository;
+
+    public TestController(TestWorkflowService testWorkflowService,
+                          LiveMatchWorkflowService liveMatchWorkflowService,
+                          MatchService matchService,
+                          LiveMatchPlayerPointsService playerPointsService,
+                          UserMatchStatsService userMatchStatsService,
+                          UserOverallPtsService userOverallPtsService,
+                          UserTransferService userTransferService,
+                          MasterDataConfigService masterDataConfigService,
+                          TestDataSeeder testDataSeeder,
+                          LiveMatchCache liveMatchCache,
+                          LiveMatchUserCache liveMatchUserCache,
+                          PlayerPointsRepository playerPointsRepository,
+                          UserMatchStatsRespository userMatchStatsRepository,
+                          UserOverallStatsRepository userOverallStatsRepository) {
         this.testWorkflowService = testWorkflowService;
+        this.liveMatchWorkflowService = liveMatchWorkflowService;
+        this.matchService = matchService;
+        this.playerPointsService = playerPointsService;
+        this.userMatchStatsService = userMatchStatsService;
+        this.userOverallPtsService = userOverallPtsService;
+        this.userTransferService = userTransferService;
+        this.masterDataConfigService = masterDataConfigService;
+        this.testDataSeeder = testDataSeeder;
+        this.liveMatchCache = liveMatchCache;
+        this.liveMatchUserCache = liveMatchUserCache;
+        this.playerPointsRepository = playerPointsRepository;
+        this.userMatchStatsRepository = userMatchStatsRepository;
+        this.userOverallStatsRepository = userOverallStatsRepository;
     }
 
+    // ── TestWorkflowService ──
+
     @PostMapping("/points/{id}")
-    public ResponseEntity<ApiResponse> testScore(@PathVariable Integer id)
-    {
+    public ResponseEntity<ApiResponse> testScore(@PathVariable Integer id) {
         testWorkflowService.calculateTestPoints(id);
-        String msg = String.format("success",id) ;
-        ApiResponse response = new ApiResponse(msg,true,HttpStatus.CREATED.value(),HttpStatus.CREATED) ;
-        return new ResponseEntity<>(response, HttpStatus.CREATED) ;
+        ApiResponse response = new ApiResponse("success", true, HttpStatus.CREATED.value(), HttpStatus.CREATED);
+        return new ResponseEntity<>(response, HttpStatus.CREATED);
+    }
+
+    // ── LiveMatchWorkflowService ──
+
+    @PostMapping("/pipeline/{matchId}")
+    public ResponseEntity<Map<String, Object>> testPipeline(@PathVariable Integer matchId) {
+        long start = System.currentTimeMillis();
+        Match match = matchService.findMatchById(matchId);
+        if (match == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Match not found: " + matchId));
+        }
+        liveMatchWorkflowService.processMatchPipeline(match);
+        long elapsed = System.currentTimeMillis() - start;
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("matchId", matchId);
+        result.put("status", "pipeline complete");
+        result.put("elapsedMs", elapsed);
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/flush")
+    public ResponseEntity<Map<String, Object>> testFlush() {
+        long start = System.currentTimeMillis();
+        liveMatchWorkflowService.flushCacheToDB();
+        return ResponseEntity.ok(Map.of(
+                "status", "flush complete",
+                "elapsedMs", System.currentTimeMillis() - start));
+    }
+
+    @PostMapping("/lockteam/{matchId}")
+    public ResponseEntity<Map<String, Object>> testLockTeam(@PathVariable Integer matchId) {
+        long start = System.currentTimeMillis();
+        Match match = matchService.findMatchById(matchId);
+        if (match == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Match not found: " + matchId));
+        }
+        liveMatchWorkflowService.lockTeamsForMatch(match);
+        return ResponseEntity.ok(Map.of(
+                "matchId", matchId,
+                "status", "teams locked",
+                "elapsedMs", System.currentTimeMillis() - start));
+    }
+
+    // ── LiveMatchPlayerPointsService ──
+
+    @PostMapping("/playerpoints/{matchId}")
+    public ResponseEntity<Map<String, Object>> testPlayerPoints(@PathVariable Integer matchId) {
+        long start = System.currentTimeMillis();
+        Match match = matchService.findMatchById(matchId);
+        if (match == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Match not found: " + matchId));
+        }
+        Map<Integer, Double> pointsMap = playerPointsService.calculatePlayerPoints(match);
+        long elapsed = System.currentTimeMillis() - start;
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("matchId", matchId);
+        result.put("playerCount", pointsMap.size());
+        result.put("playerPoints", pointsMap);
+        result.put("elapsedMs", elapsed);
+        return ResponseEntity.ok(result);
+    }
+
+    // ── UserMatchStatsService ──
+
+    @PostMapping("/usermatchpoints/{matchId}")
+    public ResponseEntity<Map<String, Object>> testUserMatchPoints(@PathVariable Integer matchId) {
+        long start = System.currentTimeMillis();
+        Match match = matchService.findMatchById(matchId);
+        if (match == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Match not found: " + matchId));
+        }
+        Map<Integer, Double> playerPointsMap = playerPointsService.calculatePlayerPoints(match);
+        Map<Integer, Double> userPoints = userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap);
+        long elapsed = System.currentTimeMillis() - start;
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("matchId", matchId);
+        result.put("userCount", userPoints.size());
+        result.put("userMatchPoints", userPoints);
+        result.put("elapsedMs", elapsed);
+        return ResponseEntity.ok(result);
+    }
+
+    // ── UserOverallPtsService ──
+
+    @PostMapping("/useroverall/{matchId}")
+    public ResponseEntity<Map<String, Object>> testUserOverallPoints(@PathVariable Integer matchId) {
+        long start = System.currentTimeMillis();
+        Match match = matchService.findMatchById(matchId);
+        if (match == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Match not found: " + matchId));
+        }
+        Map<Integer, Double> playerPointsMap = playerPointsService.calculatePlayerPoints(match);
+        Map<Integer, Double> userPoints = userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap);
+        userOverallPtsService.calcUserOverallPointsData(match, userPoints);
+        long elapsed = System.currentTimeMillis() - start;
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("matchId", matchId);
+        result.put("status", "overall points updated");
+        result.put("elapsedMs", elapsed);
+        return ResponseEntity.ok(result);
+    }
+
+    // ── UserTransferService (lock only — transfer requires auth + body) ──
+
+    @PostMapping("/lockmatch/{matchId}")
+    public ResponseEntity<Map<String, Object>> testLockMatchTeam(@PathVariable Integer matchId) {
+        long start = System.currentTimeMillis();
+        Match match = matchService.findMatchById(matchId);
+        if (match == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Match not found: " + matchId));
+        }
+        userTransferService.lockMatchTeam(match);
+        return ResponseEntity.ok(Map.of(
+                "matchId", matchId,
+                "status", "match team locked via UserTransferService",
+                "elapsedMs", System.currentTimeMillis() - start));
+    }
+
+    // ── MatchService ──
+
+    @GetMapping("/match/{matchId}")
+    public ResponseEntity<Object> testFindMatch(@PathVariable Integer matchId) {
+        Match match = matchService.findMatchById(matchId);
+        if (match == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Match not found: " + matchId));
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", match.getId());
+        result.put("date", match.getDate());
+        result.put("time", match.getTime());
+        result.put("isComplete", match.getIsMatchComplete());
+        result.put("teamA", match.getTeamA() != null ? match.getTeamA().getId() : null);
+        result.put("teamB", match.getTeamB() != null ? match.getTeamB().getId() : null);
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/match/today")
+    public ResponseEntity<Object> testTodayMatches() {
+        List<Match> matches = matchService.findMatchByDate(LocalDate.now());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("date", LocalDate.now());
+        result.put("count", matches.size());
+        result.put("matchIds", matches.stream().map(Match::getId).toList());
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/match/upcoming")
+    public ResponseEntity<Object> testUpcomingMatch() {
+        Match match = matchService.findUpcomingMatch(LocalDate.now(), LocalTime.now());
+        if (match == null) {
+            return ResponseEntity.ok(Map.of("message", "No upcoming match found"));
+        }
+        return ResponseEntity.ok(Map.of(
+                "matchId", match.getId(),
+                "date", match.getDate(),
+                "time", match.getTime()));
+    }
+
+    @GetMapping("/match/next")
+    public ResponseEntity<Object> testNextUpcoming() {
+        Match match = matchService.findNextUpcomingMatch();
+        if (match == null) {
+            return ResponseEntity.ok(Map.of("message", "No next upcoming match"));
+        }
+        return ResponseEntity.ok(Map.of(
+                "matchId", match.getId(),
+                "date", match.getDate(),
+                "time", match.getTime()));
+    }
+
+    // ── MasterDataConfigService ──
+
+    @PostMapping("/masterdata/init")
+    public ResponseEntity<Map<String, Object>> testInitMasterData() {
+        long start = System.currentTimeMillis();
+        masterDataConfigService.initializeFantasyPlayerConfigs();
+        return ResponseEntity.ok(Map.of(
+                "status", "master data initialized",
+                "elapsedMs", System.currentTimeMillis() - start));
+    }
+
+    // ── Test Data Seeder ──
+
+    @PostMapping("/seed/{matchId}")
+    public ResponseEntity<Map<String, Object>> seedTestData(@PathVariable Integer matchId) {
+        return ResponseEntity.ok(testDataSeeder.seedAll(matchId));
+    }
+
+    @PostMapping("/seed")
+    public ResponseEntity<Map<String, Object>> seedUsersOnly() {
+        return ResponseEntity.ok(testDataSeeder.seedAll(null));
+    }
+
+    @PostMapping("/seed/draft/{matchId}")
+    public ResponseEntity<Map<String, Object>> seedDraftOnly(@PathVariable Integer matchId) {
+        return ResponseEntity.ok(testDataSeeder.seedDraftOnly(matchId));
+    }
+
+    // ── Cache Status ──
+
+    @GetMapping("/cache/status")
+    public ResponseEntity<Map<String, Object>> testCacheStatus() {
+        Map<String, Object> result = new LinkedHashMap<>();
+
+        Map<String, Object> matchCache = new LinkedHashMap<>();
+        List<Match> todayMatches = liveMatchCache.getTodayMatches();
+        matchCache.put("todayMatchCount", todayMatches.size());
+        matchCache.put("todayMatchIds", todayMatches.stream().map(Match::getId).toList());
+        result.put("liveMatchCache", matchCache);
+
+        Map<String, Object> userCache = new LinkedHashMap<>();
+        userCache.put("matchStatCounts", liveMatchUserCache.getAllMatchStatCounts());
+        userCache.put("overallStatsCount", liveMatchUserCache.getOverallStatsCount());
+        userCache.put("hasDirtyData", liveMatchUserCache.hasDirtyData());
+        result.put("liveMatchUserCache", userCache);
+
+        result.put("timestamp", LocalDateTime.now());
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/cache/evict")
+    public ResponseEntity<Map<String, Object>> testEvictAllCaches() {
+        liveMatchCache.evictAll();
+        liveMatchUserCache.evictAll();
+        return ResponseEntity.ok(Map.of(
+                "status", "all caches evicted",
+                "timestamp", LocalDateTime.now()));
+    }
+
+    @PostMapping("/cache/evict/{matchId}")
+    public ResponseEntity<Map<String, Object>> testEvictMatchCache(@PathVariable Integer matchId) {
+        liveMatchCache.evictMatch(matchId);
+        liveMatchUserCache.evictMatch(matchId);
+        return ResponseEntity.ok(Map.of(
+                "matchId", matchId,
+                "status", "match cache evicted",
+                "timestamp", LocalDateTime.now()));
+    }
+
+    // ── READ: Player Points (DB) ──
+
+    @GetMapping("/view/playerpoints/{matchId}")
+    public ResponseEntity<Map<String, Object>> viewPlayerPoints(@PathVariable Integer matchId) {
+        List<PlayerPoints> records = playerPointsRepository.findByMatchId(matchId);
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (PlayerPoints pp : records) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("playerId", pp.getPlayerId());
+            row.put("points", pp.getPlayerpoints());
+            rows.add(row);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("matchId", matchId);
+        result.put("playerCount", rows.size());
+        result.put("players", rows);
+        return ResponseEntity.ok(result);
+    }
+
+    // ── READ: User Match Points (DB) ──
+
+    @GetMapping("/view/usermatch/{matchId}")
+    public ResponseEntity<Map<String, Object>> viewUserMatchPoints(@PathVariable Integer matchId) {
+        Match match = matchService.findMatchById(matchId);
+        if (match == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Match not found: " + matchId));
+        }
+        List<UserMatchStats> statsList = userMatchStatsRepository.findByMatchid(match);
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (UserMatchStats ums : statsList) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("userId", ums.getUserid() != null ? ums.getUserid().getId() : null);
+            row.put("username", ums.getUserid() != null ? ums.getUserid().getUsername() : null);
+            row.put("matchPoints", ums.getMatchpoints());
+            row.put("boosterUsed", ums.getBoosterused());
+            row.put("transfersUsed", ums.getTransferused());
+            row.put("captainId", ums.getCaptainid() != null ? ums.getCaptainid().getId() : null);
+            row.put("viceCaptainId", ums.getVicecaptainid() != null ? ums.getVicecaptainid().getId() : null);
+            row.put("playing11", ums.getPlaying11() != null
+                    ? ums.getPlaying11().stream().map(Player::getId).toList()
+                    : List.of());
+            rows.add(row);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("matchId", matchId);
+        result.put("userCount", rows.size());
+        result.put("users", rows);
+        return ResponseEntity.ok(result);
+    }
+
+    // ── READ: User Overall Points (DB) ──
+
+    @GetMapping("/view/useroverall")
+    public ResponseEntity<Map<String, Object>> viewAllUserOverallPoints() {
+        List<UserOverallStats> allStats = userOverallStatsRepository.findAll();
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (UserOverallStats uos : allStats) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("userId", uos.getUserid() != null ? uos.getUserid().getId() : null);
+            row.put("username", uos.getUserid() != null ? uos.getUserid().getUsername() : null);
+            row.put("totalPoints", uos.getTotalpoints());
+            row.put("prevPoints", uos.getPrevpoints());
+            row.put("boosterLeft", uos.getBoosterleft());
+            row.put("transferLeft", uos.getTransferleft());
+            rows.add(row);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("userCount", rows.size());
+        result.put("users", rows);
+        return ResponseEntity.ok(result);
     }
 }

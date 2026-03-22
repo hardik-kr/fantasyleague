@@ -5,13 +5,15 @@ import java.util.concurrent.ThreadPoolExecutor;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 @Configuration
 public class AsyncConfig {
 
     @Bean(name = "fantasyTaskExecutor")
-    public Executor fantasyTaskExecutor() {
+    Executor fantasyTaskExecutor() {
         int cpuCount = Runtime.getRuntime().availableProcessors();
 
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -22,5 +24,14 @@ public class AsyncConfig {
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.initialize();
         return executor;
+    }
+
+    @Bean
+    TaskScheduler taskScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(2);
+        scheduler.setThreadNamePrefix("fantasy-sched-");
+        scheduler.initialize();
+        return scheduler;
     }
 }

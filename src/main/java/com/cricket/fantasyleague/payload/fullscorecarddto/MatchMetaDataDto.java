@@ -21,5 +21,7 @@ public class MatchMetaDataDto
     private String toss ;
     private String venue ;
     private String result ;
+    private Boolean isMatchComplete ;
+    private Integer playerOfTheMatch ;
     private PlayingSquadDto playingSquad ;
 }

@@ -9,5 +9,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class PlayerDto 
 {
+    private Integer Id ;
     private String name ;
 }

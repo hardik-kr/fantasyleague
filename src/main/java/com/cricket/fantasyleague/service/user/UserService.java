@@ -1,4 +1,4 @@
-package com.cricket.fantasyleague.service;
+package com.cricket.fantasyleague.service.user;
 
 import java.util.List;
 
@@ -11,5 +11,6 @@ public interface UserService
 {
     void createUser(UserDto userdto) ;
     UserDetails getUserByUserName(String username) ;
+    UserDetails loadUserByUsername(String username) ;
     List<User> getAllUser() ;
 }

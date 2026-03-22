@@ -6,11 +6,15 @@ import java.time.LocalTime;
 public record MatchData(
         Integer id,
         LocalDate date,
-        LocalTime time,
-        String venue,
-        Integer matchnum,
+        Boolean isMatchComplete,
+        String matchtype,
         String result,
+        LocalTime time,
+        String timezone,
+        String venue,
         String toss,
+        Integer leagueId,
+        Integer momPlayerId,
         Integer teamAId,
         Integer teamBId
 ) {

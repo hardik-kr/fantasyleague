@@ -12,4 +12,5 @@ public interface UserMatchStatsRespository extends JpaRepository<UserMatchStats,
 {
     UserMatchStats findByMatchidAndUserid(Match matchid,User userid) ;
     List<UserMatchStats> findByMatchid(Match matchid) ;
+    boolean existsByMatchid(Match matchid) ;
 }

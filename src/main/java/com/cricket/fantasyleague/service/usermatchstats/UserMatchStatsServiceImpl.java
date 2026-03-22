@@ -1,4 +1,4 @@
-package com.cricket.fantasyleague.service;
+package com.cricket.fantasyleague.service.usermatchstats;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -15,9 +15,11 @@ import org.springframework.stereotype.Service;
 import com.cricket.fantasyleague.cache.LiveMatchUserCache;
 import com.cricket.fantasyleague.entity.enums.Booster;
 import com.cricket.fantasyleague.entity.enums.PlayerType;
+import com.cricket.fantasyleague.entity.table.FantasyPlayerConfig;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.Player;
 import com.cricket.fantasyleague.entity.table.UserMatchStats;
+import com.cricket.fantasyleague.repository.FantasyPlayerConfigRepository;
 
 @Service
 public class UserMatchStatsServiceImpl implements UserMatchStatsService {
@@ -27,17 +29,23 @@ public class UserMatchStatsServiceImpl implements UserMatchStatsService {
 
     private final LiveMatchUserCache userCache;
     private final Executor taskExecutor;
+    private final FantasyPlayerConfigRepository fantasyPlayerConfigRepository;
 
     public UserMatchStatsServiceImpl(LiveMatchUserCache userCache,
-                                     @Qualifier("fantasyTaskExecutor") Executor taskExecutor) {
+                                     @Qualifier("fantasyTaskExecutor") Executor taskExecutor,
+                                     FantasyPlayerConfigRepository fantasyPlayerConfigRepository) {
         this.userCache = userCache;
         this.taskExecutor = taskExecutor;
+        this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
     }
 
     @Override
     public Map<Integer, Double> calcMatchUserPointsData(Match match, Map<Integer, Double> playerPointsMap) {
         List<UserMatchStats> allStats = userCache.getUserMatchStats(match.getId());
         if (allStats.isEmpty()) return Map.of();
+
+        Integer leagueId = match.getLeagueId();
+        Map<Integer, FantasyPlayerConfig> configByPlayerId = buildConfigMap(leagueId);
 
         List<UserMatchStats> userStats = allStats.stream()
                 .filter(s -> s.getUserid() != null
@@ -49,7 +57,7 @@ public class UserMatchStatsServiceImpl implements UserMatchStatsService {
         CompletableFuture<?>[] futures = partitions.stream()
                 .map(chunk -> CompletableFuture.runAsync(() -> {
                     for (UserMatchStats stat : chunk) {
-                        stat.setMatchpoints(calculateForUser(stat, playerPointsMap));
+                        stat.setMatchpoints(calculateForUser(stat, playerPointsMap, configByPlayerId));
                     }
                 }, taskExecutor))
                 .toArray(CompletableFuture[]::new);
@@ -68,7 +76,18 @@ public class UserMatchStatsServiceImpl implements UserMatchStatsService {
         return matchPointsByUser;
     }
 
-    private Double calculateForUser(UserMatchStats stat, Map<Integer, Double> playerPointsMap) {
+    private Map<Integer, FantasyPlayerConfig> buildConfigMap(Integer leagueId) {
+        if (leagueId == null) return Map.of();
+        List<FantasyPlayerConfig> configs = fantasyPlayerConfigRepository.findByLeagueId(leagueId);
+        Map<Integer, FantasyPlayerConfig> map = new HashMap<>(configs.size());
+        for (FantasyPlayerConfig cfg : configs) {
+            map.put(cfg.getPlayerId(), cfg);
+        }
+        return map;
+    }
+
+    private Double calculateForUser(UserMatchStats stat, Map<Integer, Double> playerPointsMap,
+                                    Map<Integer, FantasyPlayerConfig> configByPlayerId) {
         List<Player> team = stat.getPlaying11();
         if (team == null || team.isEmpty()) return 0.0;
 
@@ -76,17 +95,19 @@ public class UserMatchStatsServiceImpl implements UserMatchStatsService {
         for (Player player : team) {
             Double base = playerPointsMap.get(player.getId());
             if (base == null) continue;
-            total += applyMultipliers(stat, player, base);
+            FantasyPlayerConfig config = configByPlayerId.get(player.getId());
+            total += applyMultipliers(stat, player, base, config);
         }
         return total;
     }
 
-    private double applyMultipliers(UserMatchStats stat, Player player, double points) {
+    private double applyMultipliers(UserMatchStats stat, Player player, double points,
+                                    FantasyPlayerConfig config) {
         double result = points;
 
         Booster booster = stat.getBoosterused();
-        if (booster != null) {
-            result = applyBooster(booster, player, result);
+        if (booster != null && config != null) {
+            result = applyBooster(booster, config.getType(), result);
         }
 
         if (stat.getCaptainid() != null && stat.getCaptainid().equals(player)) {
@@ -102,13 +123,14 @@ public class UserMatchStatsServiceImpl implements UserMatchStatsService {
         return result;
     }
 
-    private double applyBooster(Booster booster, Player player, double points) {
+    private double applyBooster(Booster booster, PlayerType playerType, double points) {
+        if (playerType == null) return points;
         return switch (booster) {
             case DOUBLE_UP -> points * 2;
-            case POWER_KEEPER -> player.getType() == PlayerType.KEEPER ? points * 2 : points;
-            case POWER_BATTER -> player.getType() == PlayerType.BATTER ? points * 2 : points;
-            case POWER_ALLROUNDER -> player.getType() == PlayerType.ALLROUNDER ? points * 2 : points;
-            case POWER_BOWLER -> player.getType() == PlayerType.BOWLER ? points * 2 : points;
+            case POWER_KEEPER -> playerType == PlayerType.KEEPER ? points * 2 : points;
+            case POWER_BATTER -> playerType == PlayerType.BATTER ? points * 2 : points;
+            case POWER_ALLROUNDER -> playerType == PlayerType.ALLROUNDER ? points * 2 : points;
+            case POWER_BOWLER -> playerType == PlayerType.BOWLER ? points * 2 : points;
             default -> points;
         };
     }

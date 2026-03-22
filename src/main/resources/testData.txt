@@ -1,0 +1,67 @@
+PlayerID, PlayerName, Credit, IsOverseas, PlayerType
+'10486','VIJAYKUMAR VYSHAK','8','0','1'
+'12627','MAYANK MARKANDE','7.5','0','1'
+'22601','RAJ BAWA','7.5','0','3'
+'1461627','VISHAL NISHAD','7','0','1'
+'7910','YUZVENDRA CHAHAL','9.5','0','1'
+'22561','HARNOOR SINGH','7','0','0'
+'12341','MAYANK RAWAT','7.5','0','3'
+'10919','SHASHANK SINGH','9','0','0'
+'10100','MITCHELL SANTNER','9','1','3'
+'14689','PRIYANSH ARYA','9.5','0','0'
+'13217','ARSHDEEP SINGH','10','0','1'
+'18568','MITCHELL OWEN','7.5','1','3'
+'10484','PRAVEEN DUBEY','7','0','1'
+'13748','SHERFANE RUTHERFORD','8','1','0'
+'13146','RAGHU SHARMA','7','0','1'
+'14452','HARPREET BRAR','8.5','0','1'
+'12096','YASH THAKUR','7','0','1'
+'9311','JASPRIT BUMRAH','11','0','1'
+'14504','TILAK VARMA','10','0','0'
+'14703','ATHARVA ANKOLEKAR','7.5','0','3'
+'9739','BEN DWARSHUIS','7.5','1','3'
+'11893','VISHNU VINOD','7','0','2'
+'8520','QUINTON DE KOCK','8','1','2'
+'1431785','DANISH MALEWAR','7','0','0'
+'7836','DEEPAK CHAHAR','9.5','0','1'
+'8683','SHARDUL THAKUR','9','0','3'
+'14922','SURYANSH SHEDGE','7.5','0','3'
+'27424','MUSHEER KHAN','7.5','0','3'
+'14254','PRABHSIMRAN SINGH','9','0','2'
+'13915','NEHAL WADHERA','9.5','0','0'
+'1465841','MOHAMMED SALAHUDDIN IZHAR','7','0','1'
+'36454','ROBIN MINZ','7','0','2'
+'10692','LOCKIE FERGUSON','8','1','1'
+'11684','ASHWANI KUMAR','8.5','0','1'
+'13070','RYAN RICKELTON','9','1','2'
+'15927','COOPER CONNOLLY','7.5','1','3'
+'13214','AZMATULLAH OMARZAI','9','1','3'
+'36139','NAMAN DHIR','9.5','0','3'
+'12258','WILL JACKS','9','1','3'
+'7915','SURYAKUMAR YADAV','10.5','0','0'
+'8117','TRENT BOULT','10','1','1'
+'36501','AM GHAZANFAR','7','1','1'
+'8989','MARCUS STOINIS','9','1','3'
+'11689','XAVIER BARTLETT','7','1','1'
+'14565','MARCO JANSEN','9.5','1','3'
+'9576','CORBIN BOSCH','7.5','1','3'
+'576','ROHIT SHARMA','10','0','0'
+'9428','SHREYAS IYER','10.5','0','0'
+'32525','PYLA AVINASH','7','0','0'
+'9647','HARDIK PANDYA','10.5','0','3'
+
+Use cricketApi.Matches = (
+        id	118919
+        date	2026-03-21
+        is_match_complete	0
+        matchtype	T20
+        result	Punjab Kings won by 5 wkts
+        time	21:25:00
+        timezone	IST
+        toss	Punjab Kings won the toss elected to bowl
+        venue	Ahemdabad
+        league_id	2
+        mom_player_id	9428
+        teama_id	62
+        teamb_id	65  
+    )

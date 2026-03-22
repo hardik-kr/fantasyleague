@@ -4,7 +4,9 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.ConstraintMode;
 import jakarta.persistence.Entity;
+import jakarta.persistence.ForeignKey;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -17,28 +19,46 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "matches")
+@Table(name = "matches", catalog = "cricketapi")
 public class Match 
 {
     @Id
     private Integer id ;
     private LocalDate date ;
-    private LocalTime time ;
+
+    @Column(name = "is_match_complete")
+    private Boolean isMatchComplete;
+
+    @Column(length = 50)
+    private String matchtype;
 
     @Column(length = 100)
-    private String venue ; 
-    
-    private Integer matchnum ;
-    @Column(length = 100)
     private String result ;
+
+    private LocalTime time ;
+
+    @Column(length = 40)
+    private String timezone ;
+
     @Column(length = 70)
     private String toss ;
 
+    @Column(length = 100)
+    private String venue ;
+
+    @Column(name = "league_id")
+    private Integer leagueId ;
+
+    @Column(name = "mom_player_id")
+    private Integer momPlayerId;
+
     @ManyToOne
-    @JoinColumn(name = "teamA_id", referencedColumnName = "id")
+    @JoinColumn(name = "teama_id", referencedColumnName = "id",
+                foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT))
     private Team teamA ;
     
     @ManyToOne
-    @JoinColumn(name = "teamB_id", referencedColumnName = "id")
+    @JoinColumn(name = "teamb_id", referencedColumnName = "id",
+                foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT))
     private Team teamB ;
 }
