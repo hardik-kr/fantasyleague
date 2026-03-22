@@ -1,4 +1,4 @@
-package com.cricket.fantasyleague.service;
+package com.cricket.fantasyleague.service.match;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -11,6 +11,7 @@ public interface MatchService
     Match findMatchById(Integer matchid) ;
     List<Match> findMatchByDate(LocalDate currdate);    
     Match findUpcomingMatch(LocalDate currdate,LocalTime currtime) ;
-    Match findPreviousMatch(Integer matchnum);
+    Match findPreviousMatch(Match currentMatch);
     Match findLockedMatch(LocalDate currDate, LocalTime currTime);
+    Match findNextUpcomingMatch();
 }

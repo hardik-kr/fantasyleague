@@ -20,8 +20,14 @@ public class User
     @Id
     private Integer id ;
 
+    @Column(length = 30, unique = true, nullable = false)
+    private String username ;
+
     @Column(length = 30)
-    private String name ;
+    private String firstname ;
+
+    @Column(length = 30)
+    private String lastname ;
     
     @Column(length = 30)
     private String email ;
@@ -36,20 +42,28 @@ public class User
 
     private UserRole role ;
 
+    @Column(nullable = false)
+    private Boolean isActive = true ;
+
     public User() 
     {
         this.id = generateId() ;
+        this.isActive = true ;
     }
 
-    public User(String name, String email, String password, String phonenumber, String favteam, UserRole role) 
+    public User(String username, String firstname, String lastname, String email, String password,
+                String phonenumber, String favteam, UserRole role) 
     {
         this.id = generateId() ;
-        this.name = name;
+        this.username = username;
+        this.firstname = firstname;
+        this.lastname = lastname;
         this.email = email;
         this.password = password;
         this.phonenumber = phonenumber;
         this.favteam = favteam;
         this.role = role;
+        this.isActive = true;
     }
 
     private Integer generateId() 

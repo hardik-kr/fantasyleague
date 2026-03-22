@@ -2,18 +2,15 @@ package com.cricket.fantasyleague.entity.table;
 
 import java.util.Random;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity
 @Data
-@AllArgsConstructor
 @NoArgsConstructor
 @Table(name = "player_points")
 public class PlayerPoints 
@@ -21,21 +18,21 @@ public class PlayerPoints
     @Id
     private Integer id ;
 
-    @ManyToOne
-    @JoinColumn(name = "match_id", referencedColumnName = "id")
-    private Match matchid ;
+    /** FK to cricket match id (no JPA join — table may only exist in cricketapi DB). */
+    @Column(name = "match_id")
+    private Integer matchId ;
 
-    @ManyToOne
-    @JoinColumn(name = "player_id", referencedColumnName = "id")
-    private Player playerid ;
+    /** FK to cricket player id (no JPA join). */
+    @Column(name = "player_id")
+    private Integer playerId ;
 
     private Double playerpoints ;
 
-    public PlayerPoints(Match matchid, Player playerid, Double playerpoints) 
+    public PlayerPoints(Match match, Player player, Double playerpoints) 
     {
         this.id = generateId() ;
-        this.matchid = matchid;
-        this.playerid = playerid;
+        this.matchId = match != null ? match.getId() : null;
+        this.playerId = player != null ? player.getId() : null;
         this.playerpoints = playerpoints;
     }
 
@@ -47,7 +44,7 @@ public class PlayerPoints
         id.append(random.nextInt(9)+1) ;
         
         for (int i = 0; i < 5; i++) {
-            int digit = random.nextInt(9); // Generates a random digit between 0 and 9
+            int digit = random.nextInt(9);
             id.append(digit);
         }
 

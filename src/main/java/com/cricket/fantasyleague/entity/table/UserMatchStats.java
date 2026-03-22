@@ -5,9 +5,10 @@ import java.util.Random;
 
 import com.cricket.fantasyleague.entity.enums.Booster ;
 
-import jakarta.persistence.CascadeType;
+import jakarta.persistence.ConstraintMode;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.ForeignKey;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
@@ -33,7 +34,8 @@ public class UserMatchStats
     private User userid ;
 
     @ManyToOne
-    @JoinColumn(name = "match_id", referencedColumnName = "id")
+    @JoinColumn(name = "match_id", referencedColumnName = "id",
+                foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT))
     private Match matchid ;
 
     private Booster boosterused ;
@@ -41,22 +43,27 @@ public class UserMatchStats
     private Double matchpoints ;
 
     @ManyToOne
-    @JoinColumn(name = "captain_id", referencedColumnName = "id")
+    @JoinColumn(name = "captain_id", referencedColumnName = "id",
+                foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT))
     private Player captainid ;
 
     @ManyToOne
-    @JoinColumn(name = "vicecaptain_id", referencedColumnName = "id")
+    @JoinColumn(name = "vicecaptain_id", referencedColumnName = "id",
+                foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT))
     private Player vicecaptainid ;
     
     @ManyToOne
-    @JoinColumn(name = "triple_booster_id", referencedColumnName = "id")
+    @JoinColumn(name = "triple_booster_id", referencedColumnName = "id",
+                foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT))
     private Player tripleboosterplayerid ;
 
-    @ManyToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
-        name = "user_playing11", // Set your custom table name here
+        name = "user_playing11",
         joinColumns = @JoinColumn(name = "user_matchstats_id"),
-        inverseJoinColumns = @JoinColumn(name = "player_id")
+        inverseJoinColumns = @JoinColumn(name = "player_id",
+                foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT)),
+        inverseForeignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT)
     )
     private List<Player> playing11 ;
 

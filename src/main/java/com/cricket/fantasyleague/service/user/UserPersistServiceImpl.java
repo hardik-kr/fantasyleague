@@ -1,4 +1,4 @@
-package com.cricket.fantasyleague.service;
+package com.cricket.fantasyleague.service.user;
 
 import java.util.List;
 
@@ -26,6 +26,10 @@ public class UserPersistServiceImpl {
 
     public User findByEmail(String email) {
         return userRepository.findByEmail(email);
+    }
+
+    public User findByUsername(String username) {
+        return userRepository.findByUsername(username);
     }
 
     public User findByRole(UserRole role) {

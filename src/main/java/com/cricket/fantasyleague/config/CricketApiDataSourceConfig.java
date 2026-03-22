@@ -20,7 +20,7 @@ import com.zaxxer.hikari.HikariDataSource;
 public class CricketApiDataSourceConfig {
 
     @Bean(name = "cricketApiJdbcTemplate")
-    public NamedParameterJdbcTemplate cricketApiJdbcTemplate(CricketApiDataSourceProperties props) {
+    NamedParameterJdbcTemplate cricketApiJdbcTemplate(CricketApiDataSourceProperties props) {
         HikariDataSource ds = DataSourceBuilder.create()
             .type(HikariDataSource.class)
             .url(props.getUrl())

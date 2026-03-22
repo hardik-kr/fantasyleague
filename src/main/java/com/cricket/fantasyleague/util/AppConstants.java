@@ -4,7 +4,7 @@ public final class AppConstants
 {
     public final class user
     {
-        public final static String USER_NOT_FOUND = "Email ID not found : %s" ;
+        public final static String USER_NOT_FOUND = "User not found : %s" ;
         public final static String INVALID_CREDENTIAL = "Invalid credential !! username or password" ;
         public final static String USER_CREATED_SUCCESS = "User created successfully" ;
         public static final String ALREADY_EXIST = "User already exist with %s : %s";

@@ -13,7 +13,7 @@ import com.cricket.fantasyleague.payload.dto.UserDto;
 import com.cricket.fantasyleague.payload.jwtdto.JwtRequest;
 import com.cricket.fantasyleague.payload.jwtdto.JwtResponse;
 import com.cricket.fantasyleague.security.JwtHelper;
-import com.cricket.fantasyleague.service.UserService;
+import com.cricket.fantasyleague.service.user.UserService;
 import com.cricket.fantasyleague.util.AppConstants;
 
 @Service

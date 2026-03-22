@@ -44,7 +44,7 @@ public class CricketApiSchemaFilterProvider implements SchemaFilterProvider {
 
     private static class CricketApiTableFilter implements SchemaFilter {
 
-        private static final Set<String> EXCLUDED = Set.of("matches", "team", "player");
+        private static final Set<String> EXCLUDED = Set.of("matches", "team", "players", "leagues", "player_team");
 
         @Override
         public boolean includeNamespace(Namespace namespace) {

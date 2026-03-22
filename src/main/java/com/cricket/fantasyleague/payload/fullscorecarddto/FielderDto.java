@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class FielderDto 
 {
-    private String name ;
+    private Integer PlayerId ;
     private Integer catches;
     private Integer runouts;
     private Integer runouts_direct;

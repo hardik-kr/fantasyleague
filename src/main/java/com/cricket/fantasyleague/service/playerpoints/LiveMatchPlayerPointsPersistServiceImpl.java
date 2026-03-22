@@ -1,10 +1,13 @@
-package com.cricket.fantasyleague.service;
+package com.cricket.fantasyleague.service.playerpoints;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
+import com.cricket.fantasyleague.dao.CricketEntityMapper;
 import com.cricket.fantasyleague.dao.CricketMasterDataDao;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.Player;
@@ -13,25 +16,23 @@ import com.cricket.fantasyleague.exception.CommonException;
 import com.cricket.fantasyleague.repository.PlayerPointsRepository;
 import com.cricket.fantasyleague.util.AppConstants;
 
-import jakarta.persistence.EntityManager;
-
 @Service
-public class PlayerPointsPersistServiceImpl {
+public class LiveMatchPlayerPointsPersistServiceImpl {
 
     private final PlayerPointsRepository playerPointsRepository;
     private final CricketMasterDataDao dao;
-    private final EntityManager em;
+    private final CricketEntityMapper cricketEntities;
 
-    public PlayerPointsPersistServiceImpl(PlayerPointsRepository playerPointsRepository,
-                                          CricketMasterDataDao dao,
-                                          EntityManager em) {
+    public LiveMatchPlayerPointsPersistServiceImpl(PlayerPointsRepository playerPointsRepository,
+                                                   CricketMasterDataDao dao,
+                                                   CricketEntityMapper cricketEntities) {
         this.playerPointsRepository = playerPointsRepository;
         this.dao = dao;
-        this.em = em;
+        this.cricketEntities = cricketEntities;
     }
 
     public List<PlayerPoints> findPlayerPointsByMatch(Match match) {
-        return playerPointsRepository.findByMatchid(match);
+        return playerPointsRepository.findByMatchId(match.getId());
     }
 
     public void saveAllPlayerPoints(List<PlayerPoints> records) {
@@ -48,6 +49,20 @@ public class PlayerPointsPersistServiceImpl {
 
     public Optional<Player> findPlayerByNameAndTeam(String playerName, String teamName) {
         return dao.findPlayerByNameAndTeam(playerName, teamName)
-                .map(pd -> em.find(Player.class, pd.id()));
+                .map(cricketEntities::toPlayer);
+    }
+
+    public Optional<Player> findPlayerById(Integer id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return dao.findPlayerById(id).map(cricketEntities::toPlayer);
+    }
+
+    public Map<Integer, Player> findPlayersByIds(List<Integer> ids) {
+        return dao.findPlayersByIds(ids).stream()
+                .map(cricketEntities::toPlayer)
+                .filter(p -> p != null && p.getId() != null)
+                .collect(Collectors.toMap(Player::getId, p -> p));
     }
 }

@@ -1,4 +1,4 @@
-package com.cricket.fantasyleague.service;
+package com.cricket.fantasyleague.service.usertransfer;
 
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.payload.dto.UserTransferDto;

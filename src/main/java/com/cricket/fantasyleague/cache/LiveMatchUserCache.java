@@ -130,6 +130,24 @@ public class LiveMatchUserCache {
         return matchStatsByMatchId.containsKey(matchId);
     }
 
+    /**
+     * Promotes prevpoints = totalpoints for all cached UserOverallStats.
+     * Called once when a match ends, so that the next match's calculation
+     * starts from the correct accumulated baseline.
+     */
+    public void promotePrevPoints() {
+        int promoted = 0;
+        for (UserOverallStats overall : overallStatsByUserId.values()) {
+            Double total = overall.getTotalpoints();
+            if (total != null) {
+                overall.setPrevpoints(total);
+                promoted++;
+            }
+        }
+        overallDirty = true;
+        logger.info("Promoted prevpoints = totalpoints for {} users", promoted);
+    }
+
     public void evictMatch(Integer matchId) {
         matchStatsByMatchId.remove(matchId);
         dirtyMatchIds.remove(matchId);

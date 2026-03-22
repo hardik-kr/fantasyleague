@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 
 import com.cricket.fantasyleague.entity.enums.UserRole;
 import com.cricket.fantasyleague.entity.table.User;
-import com.cricket.fantasyleague.service.UserPersistServiceImpl;
+import com.cricket.fantasyleague.service.user.UserPersistServiceImpl;
 
 @Component
 public class Initialization implements CommandLineRunner {
@@ -22,6 +22,8 @@ public class Initialization implements CommandLineRunner {
         User adminuser = userPersistService.findByRole(UserRole.ADMIN);
         if (adminuser == null) {
             adminuser = new User();
+            adminuser.setUsername("admin");
+            adminuser.setFirstname("Admin");
             adminuser.setEmail("admin@gmail.com");
             adminuser.setPassword(new BCryptPasswordEncoder().encode("password"));
             adminuser.setRole(UserRole.ADMIN);
