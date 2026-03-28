@@ -50,6 +50,7 @@ public class LiveMatchScheduler {
     private volatile ScheduledFuture<?> nextPoll;
     private volatile ScheduledFuture<?> flushTask;
     private final Set<Integer> lockedMatchIds = ConcurrentHashMap.newKeySet();
+    private final Set<Integer> finalizedMatchIds = ConcurrentHashMap.newKeySet();
 
     public LiveMatchScheduler(LiveMatchWorkflowService liveMatchWorkflowService,
                               LiveMatchCache liveMatchCache,
@@ -98,7 +99,21 @@ public class LiveMatchScheduler {
         int liveCount = 0;
 
         for (Match match : todayMatches) {
-            if (!isStarted(match, now) || isCompleted(match)) {
+            if (!isStarted(match, now)) {
+                continue;
+            }
+
+            if (isCompleted(match)) {
+                if (finalizedMatchIds.add(match.getId())) {
+                    logger.info("Finalizing completed matchId={} (recovery/transition)", match.getId());
+                    try {
+                        liveMatchWorkflowService.processMatchPipeline(match);
+                        logger.info("Finalization complete for matchId={}", match.getId());
+                    } catch (Exception ex) {
+                        logger.error("Finalization failed for matchId={}: {}", match.getId(), ex.getMessage(), ex);
+                        finalizedMatchIds.remove(match.getId());
+                    }
+                }
                 lockedMatchIds.remove(match.getId());
                 continue;
             }

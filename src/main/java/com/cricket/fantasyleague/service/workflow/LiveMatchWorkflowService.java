@@ -23,6 +23,7 @@ import com.cricket.fantasyleague.entity.table.FantasyPlayerConfig;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.PlayerPoints;
 import com.cricket.fantasyleague.repository.FantasyPlayerConfigRepository;
+import com.cricket.fantasyleague.repository.PlayerPointsRepository;
 import com.cricket.fantasyleague.service.playerpoints.LiveMatchPlayerPointsPersistServiceImpl;
 import com.cricket.fantasyleague.service.playerpoints.LiveMatchPlayerPointsService;
 import com.cricket.fantasyleague.service.usermatchstats.UserMatchStatsService;
@@ -53,6 +54,7 @@ public class LiveMatchWorkflowService {
     private final UserOverallPtsService userOverallPtsService;
     private final UserTransferService userTransferService;
     private final FantasyPlayerConfigRepository fantasyPlayerConfigRepository;
+    private final PlayerPointsRepository playerPointsRepository;
     private final Executor taskExecutor;
 
     private final ConcurrentHashMap<Integer, Map<Integer, FantasyPlayerConfig>> playerConfigByMatch = new ConcurrentHashMap<>();
@@ -67,6 +69,7 @@ public class LiveMatchWorkflowService {
                                     UserOverallPtsService userOverallPtsService,
                                     UserTransferService userTransferService,
                                     FantasyPlayerConfigRepository fantasyPlayerConfigRepository,
+                                    PlayerPointsRepository playerPointsRepository,
                                     @Qualifier("fantasyTaskExecutor") Executor taskExecutor) {
         this.liveMatchCache = liveMatchCache;
         this.liveMatchUserCache = liveMatchUserCache;
@@ -76,6 +79,7 @@ public class LiveMatchWorkflowService {
         this.userOverallPtsService = userOverallPtsService;
         this.userTransferService = userTransferService;
         this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
+        this.playerPointsRepository = playerPointsRepository;
         this.taskExecutor = taskExecutor;
     }
 
@@ -146,10 +150,17 @@ public class LiveMatchWorkflowService {
 
         int updated = 0;
         for (Map.Entry<Integer, Double> entry : playerPointsMap.entrySet()) {
-            FantasyPlayerConfig cfg = configMap.get(entry.getKey());
-            if (cfg == null) continue;
+            Integer playerId = entry.getKey();
+            FantasyPlayerConfig cfg = configMap.get(playerId);
+            if (cfg == null) {
+                cfg = fantasyPlayerConfigRepository.findByPlayerIdAndLeagueId(playerId, leagueId).orElse(null);
+                if (cfg == null) continue;
+                configMap.put(playerId, cfg);
+                baselines.put(playerId, cfg.getTotalPoints() != null ? cfg.getTotalPoints() : 0.0);
+                logger.info("Late-discovered config for playerId={} (impact sub), baseline={}", playerId, baselines.get(playerId));
+            }
 
-            double baseline = baselines.getOrDefault(entry.getKey(), 0.0);
+            double baseline = baselines.getOrDefault(playerId, 0.0);
             cfg.setTotalPoints(baseline + entry.getValue());
             updated++;
         }
@@ -175,17 +186,26 @@ public class LiveMatchWorkflowService {
 
     private void initPlayerConfigCache(Integer matchId, Integer leagueId) {
         List<FantasyPlayerConfig> configs = fantasyPlayerConfigRepository.findByLeagueId(leagueId);
+
+        Map<Integer, Double> alreadyFlushedMatchPoints = new HashMap<>();
+        for (PlayerPoints pp : playerPointsRepository.findByMatchId(matchId)) {
+            if (pp.getPlayerId() != null) {
+                alreadyFlushedMatchPoints.put(pp.getPlayerId(), pp.getPlayerpoints());
+            }
+        }
+
         Map<Integer, FantasyPlayerConfig> map = new HashMap<>(configs.size());
         Map<Integer, Double> baselines = new HashMap<>(configs.size());
         for (FantasyPlayerConfig cfg : configs) {
             map.put(cfg.getPlayerId(), cfg);
-            baselines.put(cfg.getPlayerId(),
-                    cfg.getTotalPoints() != null ? cfg.getTotalPoints() : 0.0);
+            double dbTotal = cfg.getTotalPoints() != null ? cfg.getTotalPoints() : 0.0;
+            double matchPts = alreadyFlushedMatchPoints.getOrDefault(cfg.getPlayerId(), 0.0);
+            baselines.put(cfg.getPlayerId(), dbTotal - matchPts);
         }
         playerConfigByMatch.put(matchId, map);
         playerBaselineByMatch.put(matchId, baselines);
-        logger.info("Snapshotted player totalPoints baseline for matchId={}, {} players",
-                matchId, configs.size());
+        logger.info("Snapshotted player totalPoints baseline for matchId={}, {} players (subtracted {} existing match points)",
+                matchId, configs.size(), alreadyFlushedMatchPoints.size());
     }
 
     private void flushPlayerConfigToDB(Integer matchId) {
