@@ -2,10 +2,12 @@ package com.cricket.fantasyleague.service.masterdata;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Set;
+
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +71,13 @@ public class MasterDataConfigService {
             }
 
             Map<String, PlayerData> normalizedIndex = buildNameIndex(dbPlayers);
+
+            Set<Integer> existingPlayerIds = new HashSet<>();
+            for (FantasyPlayerConfig fc : fantasyPlayerConfigRepository.findByLeagueId(league.id())) {
+                existingPlayerIds.add(fc.getPlayerId());
+            }
+            logger.info("leagueId={} — {} existing configs loaded", league.id(), existingPlayerIds.size());
+
             int created = 0;
             int skipped = 0;
 
@@ -87,9 +96,7 @@ public class MasterDataConfigService {
                     continue;
                 }
 
-                Optional<FantasyPlayerConfig> existing =
-                        fantasyPlayerConfigRepository.findByPlayerIdAndLeagueId(matched.id(), league.id());
-                if (existing.isPresent()) {
+                if (existingPlayerIds.contains(matched.id())) {
                     continue;
                 }
 
@@ -101,14 +108,34 @@ public class MasterDataConfigService {
                 FantasyPlayerConfig config = new FantasyPlayerConfig(
                         matched.id(), league.id(), credit, type, overseas, uncapped);
                 batch.add(config);
+                existingPlayerIds.add(matched.id());
                 created++;
             }
 
             if (!batch.isEmpty()) {
                 fantasyPlayerConfigRepository.saveAll(batch);
             }
-            logger.info("leagueId={} — created {} configs, skipped {} (no DB match)",
+            logger.info("leagueId={} — created {} configs from IPL API, skipped {} (no DB match)",
                     league.id(), created, skipped);
+
+            int defaultCreated = 0;
+            List<FantasyPlayerConfig> defaultBatch = new ArrayList<>();
+            for (PlayerData p : dbPlayers) {
+                if (existingPlayerIds.contains(p.id())) {
+                    continue;
+                }
+                PlayerType role = p.role() != null ? p.role() : PlayerType.BATTER;
+                FantasyPlayerConfig config = new FantasyPlayerConfig(
+                        p.id(), league.id(), 8.0, role, false, false);
+                defaultBatch.add(config);
+                existingPlayerIds.add(p.id());
+                defaultCreated++;
+            }
+            if (!defaultBatch.isEmpty()) {
+                fantasyPlayerConfigRepository.saveAll(defaultBatch);
+            }
+            logger.info("leagueId={} — created {} default configs for remaining DB players",
+                    league.id(), defaultCreated);
         }
     }
 
