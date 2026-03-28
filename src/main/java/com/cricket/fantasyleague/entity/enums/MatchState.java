@@ -1,6 +1,7 @@
 package com.cricket.fantasyleague.entity.enums;
 
 public enum MatchState {
+    PREVIEW,
     UPCOMING,
     IN_PROGRESS,
     COMPLETE;
