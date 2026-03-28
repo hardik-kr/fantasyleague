@@ -24,7 +24,7 @@ public class UserTransferController
         this.transferWorkflowService = transferWorkflowService;
     }
 
-    @PostMapping("/transfer")
+    @PostMapping("/transfer-update")
     public ResponseEntity<ApiResponse> transferMethod(@RequestBody UserTransferDto userTransferDto)
     {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

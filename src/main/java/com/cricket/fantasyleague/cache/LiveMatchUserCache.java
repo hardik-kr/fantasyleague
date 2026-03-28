@@ -62,15 +62,19 @@ public class LiveMatchUserCache {
         matchStatsByMatchId.put(match.getId(), stats);
         logger.info("Warmed up {} UserMatchStats for match {}", stats.size(), match.getId());
 
-        if (overallStatsByUserId.isEmpty()) {
-            List<UserOverallStats> allOverall = userOverallStatsRepository.findAll();
-            for (UserOverallStats o : allOverall) {
-                if (o.getUserid() != null) {
-                    overallStatsByUserId.put(o.getUserid().getId(), o);
-                }
+        reloadOverallStats();
+    }
+
+    private void reloadOverallStats() {
+        overallStatsByUserId.clear();
+        List<UserOverallStats> allOverall = userOverallStatsRepository.findAll();
+        for (UserOverallStats o : allOverall) {
+            if (o.getUserid() != null) {
+                overallStatsByUserId.put(o.getUserid().getId(), o);
             }
-            logger.info("Warmed up {} UserOverallStats", overallStatsByUserId.size());
         }
+        overallDirty = false;
+        logger.info("Loaded {} UserOverallStats from DB", overallStatsByUserId.size());
     }
 
     public List<UserMatchStats> getUserMatchStats(Integer matchId) {

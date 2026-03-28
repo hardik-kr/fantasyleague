@@ -2,7 +2,6 @@ package com.cricket.fantasyleague.service.user;
 
 import java.util.List;
 
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -54,7 +53,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
             userobj = persistService.findByUsername(username);
         }
         if (userobj == null) {
-            throw new BadCredentialsException(String.format(AppConstants.user.USER_NOT_FOUND, username));
+            throw new UsernameNotFoundException(String.format(AppConstants.user.USER_NOT_FOUND, username));
         }
         return buildDtoFromUser(userobj);
     }

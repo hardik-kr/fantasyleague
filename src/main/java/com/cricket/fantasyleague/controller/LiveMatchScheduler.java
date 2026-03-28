@@ -1,8 +1,11 @@
 package com.cricket.fantasyleague.controller;
 
+import static com.cricket.fantasyleague.util.MatchTimeUtils.nowDate;
+import static com.cricket.fantasyleague.util.MatchTimeUtils.nowTime;
+import static com.cricket.fantasyleague.util.MatchTimeUtils.nowDateTime;
+
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
@@ -67,7 +70,7 @@ public class LiveMatchScheduler {
             logger.info("Smart scheduler disabled via config");
             return;
         }
-        logger.info("Fantasy smart scheduler started at {}", LocalDateTime.now());
+        logger.info("Fantasy smart scheduler started at {}", nowDateTime());
         pollLiveMatches();
         scheduleNextPoll();
         flushTask = taskScheduler.scheduleAtFixedRate(
@@ -84,7 +87,7 @@ public class LiveMatchScheduler {
     }
 
     public void pollLiveMatches() {
-        logger.info("Poll cycle started at {}", LocalDateTime.now());
+        logger.info("Poll cycle started at {}", nowDateTime());
         List<Match> todayMatches = liveMatchCache.getTodayMatches();
 
         if (todayMatches.isEmpty()) {
@@ -92,7 +95,7 @@ public class LiveMatchScheduler {
             return;
         }
 
-        LocalTime now = LocalTime.now();
+        LocalTime now = nowTime();
         int liveCount = 0;
 
         for (Match match : todayMatches) {
@@ -152,7 +155,7 @@ public class LiveMatchScheduler {
             }
 
             if (nextStart != null) {
-                long timeUntilMatch = Duration.between(LocalDateTime.now(), nextStart).toMillis();
+                long timeUntilMatch = Duration.between(nowDateTime(), nextStart).toMillis();
                 String label = nextMatch != null ? "matchId=" + nextMatch.getId() : "next scheduled match";
 
                 if (timeUntilMatch <= PRE_MATCH_BUFFER_MS) {
@@ -175,7 +178,7 @@ public class LiveMatchScheduler {
     }
 
     private boolean hasLiveMatch(List<Match> matches) {
-        LocalTime now = LocalTime.now();
+        LocalTime now = nowTime();
         for (Match match : matches) {
             if (isStarted(match, now) && !isCompleted(match)) {
                 return true;
@@ -185,7 +188,7 @@ public class LiveMatchScheduler {
     }
 
     private LocalDateTime findNextMatchStart(List<Match> matches) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = nowDateTime();
         LocalDateTime earliest = null;
 
         for (Match match : matches) {
@@ -200,7 +203,7 @@ public class LiveMatchScheduler {
 
     private boolean isStarted(Match match, LocalTime now) {
         return match.getDate() != null && match.getTime() != null
-                && !LocalDate.now().isAfter(match.getDate())
+                && !nowDate().isAfter(match.getDate())
                 && now.isAfter(match.getTime());
     }
 

@@ -1,0 +1,53 @@
+# create user and create draft players
+curl -X POST http://localhost:9095/test/seed/118916
+
+# create user only
+curl -X POST http://localhost:9095/test/seed
+
+# Lock teams
+curl -X POST http://localhost:9095/test/lockteam/118916
+
+# Calculate player points for the match
+curl -X POST http://localhost:9095/test/playerpoints/118916
+
+# Calculate user match points
+curl -X POST http://localhost:9095/test/usermatchpoints/118916
+
+# Calculate user overall points
+curl -X POST http://localhost:9095/test/useroverall/118916
+
+# Run full pipeline
+curl -X POST http://localhost:9095/test/pipeline/118916
+
+# Check cache status
+curl http://localhost:9095/test/cache/status
+
+# Seed drafts for a different match (uses existing users)
+curl -X POST http://localhost:9095/test/seed/draft/{newMatchId}
+
+
+curl -X POST http://localhost:9095/season/transfer -H "Content-Type: application/json" -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0dXNlcjEiLCJpYXQiOjE3NzQxNjE4NjEsImV4cCI6MTc3NDI0ODI2MX0.CFsVmOb8V5Zpunp3ljFCwfzvyREi0kPb-G1hOJHhme4" -d '{"userplaying11":[8216,9838,10100,10692,9441,9720,11200,13320,8983,11196,10698],"captainid":10100,"vicecaptainid":9838,"tripleboostpid":null,"boosterid":null}'
+
+
+
+# Live Status Check
+curl http://localhost:9095/test/view/playerpoints/122720
+
+curl http://localhost:9095/test/view/usermatch/122720
+
+curl http://localhost:9095/test/view/useroverall
+
+
+ssh -i ~/.ssh/id_ed25519_personal -T git@github.com
+ssh -T git@github.com 
+
+git remote set-url origin https://hardik-kr@github.com/hardik-kr/fantasyleague.git
+
+git config core.sshCommand "ssh -i ~/.ssh/id_ed25519_personal"      
+
+
+
+
+
+git config user.email "hardikpraj2009@gmail.com"                    
+git config user.name "hardik-kr"      

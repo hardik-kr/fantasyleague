@@ -1,6 +1,7 @@
 package com.cricket.fantasyleague.cache;
 
-import java.time.LocalDate;
+import static com.cricket.fantasyleague.util.MatchTimeUtils.nowDate;
+
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -94,7 +95,7 @@ public class LiveMatchCache {
             return entry.value;
         }
 
-        List<Match> matches = matchService.findMatchByDate(LocalDate.now());
+        List<Match> matches = matchService.findMatchByDate(nowDate());
         todayMatchesEntry = new CachedEntry<>(matches);
         return matches;
     }
