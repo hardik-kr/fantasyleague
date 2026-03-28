@@ -7,8 +7,8 @@ public enum MatchState {
     COMPLETE;
 
     /**
-     * Converts an API string like "Upcoming", "In Progress", "Complete"
-     * to the corresponding enum constant. Returns null for unknown values.
+     * Converts an API string to the corresponding enum constant.
+     * Handles variations like "Live", "Innings Break", "Stumps", "Toss", etc.
      */
     public static MatchState fromApiValue(String value) {
         if (value == null || value.isBlank()) return null;
@@ -16,7 +16,20 @@ public enum MatchState {
         try {
             return valueOf(normalized);
         } catch (IllegalArgumentException e) {
-            return null;
+            // Map known live-game states to IN_PROGRESS
+        }
+        switch (normalized) {
+            case "LIVE":
+            case "INNINGS_BREAK":
+            case "STUMPS":
+            case "TOSS":
+            case "LUNCH":
+            case "TEA":
+            case "DRINKS":
+            case "STRATEGIC_TIMEOUT":
+                return IN_PROGRESS;
+            default:
+                return null;
         }
     }
 }
