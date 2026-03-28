@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 import com.cricket.fantasyleague.dao.model.MatchData;
 import com.cricket.fantasyleague.dao.model.PlayerData;
 import com.cricket.fantasyleague.dao.model.TeamData;
+import com.cricket.fantasyleague.entity.enums.MatchState;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.Player;
 import com.cricket.fantasyleague.entity.table.Team;
@@ -31,7 +32,8 @@ public class CricketEntityMapper {
         m.setId(md.id());
         m.setDate(md.date());
         m.setIsMatchComplete(md.isMatchComplete());
-        m.setMatchtype(md.matchtype());
+        m.setMatchState(MatchState.fromApiValue(md.matchState()));
+        m.setMatchDesc(md.matchDesc());
         m.setResult(md.result());
         m.setTime(md.time());
         m.setTimezone(md.timezone());

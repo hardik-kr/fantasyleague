@@ -1,7 +1,7 @@
 package com.cricket.fantasyleague.service.workflow;
 
-import java.time.LocalDate;
-import java.time.LocalTime;
+import static com.cricket.fantasyleague.util.MatchTimeUtils.nowDate;
+import static com.cricket.fantasyleague.util.MatchTimeUtils.nowTime;
 
 import org.springframework.stereotype.Service;
 
@@ -23,7 +23,7 @@ public class TransferWorkflowService {
     }
 
     public void makeTransferForCurrentWindow(UserTransferDto userTransferDto, String userEmail) {
-        Match nextMatch = matchService.findUpcomingMatch(LocalDate.now(), LocalTime.now());
+        Match nextMatch = matchService.findUpcomingMatch(nowDate(), nowTime());
         if (nextMatch == null) {
             throw new CommonException("No upcoming matches available. Tournament may have ended.");
         }

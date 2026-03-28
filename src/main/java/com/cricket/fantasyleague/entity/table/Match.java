@@ -6,6 +6,8 @@ import java.time.LocalTime;
 import jakarta.persistence.Column;
 import jakarta.persistence.ConstraintMode;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.ForeignKey;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
@@ -14,6 +16,8 @@ import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import com.cricket.fantasyleague.entity.enums.MatchState;
 
 @Entity
 @Data
@@ -29,8 +33,12 @@ public class Match
     @Column(name = "is_match_complete")
     private Boolean isMatchComplete;
 
-    @Column(length = 50)
-    private String matchtype;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "match_state", length = 20)
+    private MatchState matchState;
+
+    @Column(name = "match_desc", length = 100)
+    private String matchDesc;
 
     @Column(length = 100)
     private String result ;

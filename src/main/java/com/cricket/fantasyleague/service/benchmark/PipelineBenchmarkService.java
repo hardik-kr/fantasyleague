@@ -110,7 +110,7 @@ public class PipelineBenchmarkService {
         match.setTime(LocalTime.of(14, 0));
         match.setTimezone("Asia/Kolkata");
         match.setVenue("LoadTest Venue");
-        match.setMatchtype("LoadTest");
+        match.setMatchDesc("LoadTest");
         match.setIsMatchComplete(false);
         match.setResult(null);
         match.setToss(null);

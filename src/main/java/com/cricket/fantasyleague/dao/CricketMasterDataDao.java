@@ -1,5 +1,8 @@
 package com.cricket.fantasyleague.dao;
 
+import static com.cricket.fantasyleague.util.MatchTimeUtils.nowDate;
+import static com.cricket.fantasyleague.util.MatchTimeUtils.nowTime;
+
 import java.sql.ResultSet;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -18,6 +21,7 @@ import com.cricket.fantasyleague.dao.model.LeagueData;
 import com.cricket.fantasyleague.dao.model.MatchData;
 import com.cricket.fantasyleague.dao.model.PlayerData;
 import com.cricket.fantasyleague.dao.model.PlayerTeamData;
+import com.cricket.fantasyleague.dao.model.PlayerWithTeamData;
 import com.cricket.fantasyleague.dao.model.TeamData;
 
 @Repository
@@ -33,7 +37,7 @@ public class CricketMasterDataDao {
     // ── Match queries ──
 
     private static final String MATCH_COLS =
-            "m.id, m.date, m.is_match_complete, m.matchtype, m.result, m.time, m.timezone, m.toss, m.venue, m.league_id, m.mom_player_id, m.teama_id, m.teamb_id";
+            "m.id, m.date, m.is_match_complete, m.match_state, m.match_desc, m.result, m.time, m.timezone, m.toss, m.venue, m.league_id, m.mom_player_id, m.teama_id, m.teamb_id";
 
     public Optional<MatchData> findMatchById(Integer id) {
         String sql = "SELECT " + MATCH_COLS + " FROM matches m WHERE m.id = :id";
@@ -56,8 +60,8 @@ public class CricketMasterDataDao {
     }
 
     public Optional<MatchData> findNextUpcomingMatch() {
-        LocalDate today = LocalDate.now();
-        LocalTime now = LocalTime.now();
+        LocalDate today = nowDate();
+        LocalTime now = nowTime();
         String sql = "SELECT " + MATCH_COLS + " FROM matches m" +
                 " WHERE (m.date > :today OR (m.date = :today AND m.time > :now))" +
                 " AND (m.is_match_complete IS NULL OR m.is_match_complete = false)" +
@@ -187,6 +191,18 @@ public class CricketMasterDataDao {
         return jdbc.query(sql, new MapSqlParameterSource("teamId", teamId), PLAYER_TEAM_MAPPER);
     }
 
+    // ── Player + Team joined queries (for UI bulk load) ──
+
+    public List<PlayerWithTeamData> findPlayersWithTeamByLeagueId(Integer leagueId) {
+        String sql = "SELECT DISTINCT p.id, p.name, p.role, t.id AS team_id, t.name AS team_name, t.short_name AS team_short_name" +
+                " FROM players p" +
+                " JOIN player_team pt ON p.id = pt.player_id" +
+                " JOIN teams t ON pt.team_id = t.id" +
+                " WHERE t.league_id = :leagueId AND pt.is_active = true" +
+                " ORDER BY p.id";
+        return jdbc.query(sql, new MapSqlParameterSource("leagueId", leagueId), PLAYER_WITH_TEAM_MAPPER);
+    }
+
     // ── Internal ──
 
     private <T> Optional<T> queryForOptional(String sql, MapSqlParameterSource params, RowMapper<T> mapper) {
@@ -204,7 +220,8 @@ public class CricketMasterDataDao {
         rs.getInt("id"),
         rs.getDate("date").toLocalDate(),
         rs.getObject("is_match_complete", Boolean.class),
-        rs.getString("matchtype"),
+        rs.getString("match_state"),
+        rs.getString("match_desc"),
         rs.getString("result"),
         rs.getTime("time").toLocalTime(),
         rs.getString("timezone"),
@@ -242,4 +259,17 @@ public class CricketMasterDataDao {
         rs.getInt("team_id"),
         rs.getBoolean("is_active")
     );
+
+    private static final RowMapper<PlayerWithTeamData> PLAYER_WITH_TEAM_MAPPER = (ResultSet rs, int rowNum) -> {
+        int roleOrdinal = rs.getInt("role");
+        PlayerType role = rs.wasNull() ? PlayerType.BATTER : PlayerType.values()[roleOrdinal];
+        return new PlayerWithTeamData(
+            rs.getInt("id"),
+            rs.getString("name"),
+            role,
+            rs.getInt("team_id"),
+            rs.getString("team_name"),
+            rs.getString("team_short_name")
+        );
+    };
 }

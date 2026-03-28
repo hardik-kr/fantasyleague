@@ -1,13 +1,16 @@
 package com.cricket.fantasyleague.service.usertransfer;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,15 +40,20 @@ public class UserTransferServiceImpl implements UserTransferService {
     private final MatchService matchService;
     private final FantasyPlayerConfigRepository fantasyPlayerConfigRepository;
     private final CricketMasterDataDao cricketDao;
+    private final Set<Integer> freeTransferMatchIds;
 
     public UserTransferServiceImpl(UserTransferPersistServiceImpl persistService,
                                    MatchService matchService,
                                    FantasyPlayerConfigRepository fantasyPlayerConfigRepository,
-                                   CricketMasterDataDao cricketDao) {
+                                   CricketMasterDataDao cricketDao,
+                                   @Value("${fantasy.free-transfer-match-ids:}") List<Integer> freeTransferMatchIdList) {
         this.persistService = persistService;
         this.matchService = matchService;
         this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
         this.cricketDao = cricketDao;
+        this.freeTransferMatchIds = freeTransferMatchIdList != null && !freeTransferMatchIdList.isEmpty()
+                ? new HashSet<>(freeTransferMatchIdList) : Collections.emptySet();
+        logger.info("Free transfer match IDs: {}", this.freeTransferMatchIds);
     }
 
     @Override
@@ -57,14 +65,29 @@ public class UserTransferServiceImpl implements UserTransferService {
         Match prevMatch = matchService.findPreviousMatch(nextMatch);
 
         int substitution = 0;
+        boolean isFreeTransferWindow = freeTransferMatchIds.contains(nextMatch.getId());
+        if (isFreeTransferWindow && userTransferDto.getBoosterid() == Booster.SUPER_TRANSFER) {
+            throw new InvalidTeamException("SUPER_TRANSFER booster cannot be used during a free transfer window");
+        }
+        if (userTransferDto.getBoosterid() != null) {
+            UserOverallStats overallStats = persistService.findOverallStatsByUser(userObj);
+            int boostersLeft = overallStats != null && overallStats.getBoosterleft() != null
+                    ? overallStats.getBoosterleft() : 0;
+            if (boostersLeft <= 0) {
+                throw new InvalidTeamException("No boosters remaining for this season");
+            }
+        }
         boolean isSuperTransfer = userTransferDto.getBoosterid() == Booster.SUPER_TRANSFER;
-        if (!isSuperTransfer && prevMatch != null) {
+        if (!isFreeTransferWindow && !isSuperTransfer && prevMatch != null) {
             UserMatchStats userMatchStats = persistService.findMatchStatsByMatchAndUser(prevMatch, userObj);
             UserOverallStats userOverallStats = persistService.findOverallStatsByUser(userObj);
             if (userMatchStats != null && userOverallStats != null) {
                 substitution = findCountOfSubstitution(newTeamObj, userMatchStats.getPlaying11(),
                         userOverallStats.getTransferleft());
             }
+        }
+        if (isFreeTransferWindow) {
+            logger.info("Free transfer window active for matchId={}, userId={}", nextMatch.getId(), userObj.getId());
         }
 
         Player captainid = validateCaptain(userTransferDto.getCaptainid());
@@ -171,6 +194,7 @@ public class UserTransferServiceImpl implements UserTransferService {
 
         int batters = 0, bowlers = 0, keepers = 0, allrounders = 0;
         int overseasCount = 0;
+        double totalCredit = 0.0;
         Map<Integer, Integer> teamCount = new HashMap<>();
 
         for (Player p : players) {
@@ -185,8 +209,13 @@ public class UserTransferServiceImpl implements UserTransferService {
             }
 
             FantasyPlayerConfig cfg = configMap.get(p.getId());
-            if (cfg != null && Boolean.TRUE.equals(cfg.getOverseas())) {
-                overseasCount++;
+            if (cfg != null) {
+                if (Boolean.TRUE.equals(cfg.getOverseas())) {
+                    overseasCount++;
+                }
+                if (cfg.getCredit() != null) {
+                    totalCredit += cfg.getCredit();
+                }
             }
 
             List<PlayerTeamData> playerTeams = cricketDao.findTeamsByPlayerId(p.getId());
@@ -216,6 +245,10 @@ public class UserTransferServiceImpl implements UserTransferService {
             if (entry.getValue() > 7) {
                 throw new InvalidTeamException("Max 7 players from one team allowed, teamId=" + entry.getKey() + " has " + entry.getValue());
             }
+        }
+        if (totalCredit > 100.0) {
+            throw new InvalidTeamException(
+                    String.format("Total credit must not exceed 100, current total: %.1f", totalCredit));
         }
     }
 
@@ -253,7 +286,8 @@ public class UserTransferServiceImpl implements UserTransferService {
             UserOverallStats overall = persistService.findOverallStatsByUser(user);
             if (overall != null) {
                 overall.setPrevpoints(overall.getTotalpoints());
-                if (draft.getTransferused() != null && draft.getTransferused() > 0) {
+                boolean freeWindow = freeTransferMatchIds.contains(currMatch.getId());
+                if (!freeWindow && draft.getTransferused() != null && draft.getTransferused() > 0) {
                     int newTransferLeft = overall.getTransferleft() != null
                             ? overall.getTransferleft() - draft.getTransferused()
                             : 0;
@@ -271,6 +305,21 @@ public class UserTransferServiceImpl implements UserTransferService {
 
         persistService.saveAllMatchStats(matchStatsBatch);
         persistService.saveAllOverallStats(overallBatch);
-        logger.info("Locked {} user teams for matchId={}", matchStatsBatch.size(), currMatch.getId());
+
+        Match nextMatch = matchService.findUpcomingMatch(currMatch.getDate(), currMatch.getTime());
+        if (nextMatch != null) {
+            for (UserMatchStatsDraft draft : allDrafts) {
+                draft.setMatchid(nextMatch);
+                draft.setTransferused(0);
+                draft.setBoosterused(null);
+            }
+            persistService.saveAllDrafts(allDrafts);
+            logger.info("Locked {} user teams for matchId={}, drafts carried forward to matchId={}",
+                    matchStatsBatch.size(), currMatch.getId(), nextMatch.getId());
+        } else {
+            persistService.deleteAllDrafts(allDrafts);
+            logger.info("Locked {} user teams for matchId={}, no next match — drafts deleted",
+                    matchStatsBatch.size(), currMatch.getId());
+        }
     }
 }

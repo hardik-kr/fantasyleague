@@ -1,8 +1,9 @@
 package com.cricket.fantasyleague.controller;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
+import static com.cricket.fantasyleague.util.MatchTimeUtils.nowDate;
+import static com.cricket.fantasyleague.util.MatchTimeUtils.nowTime;
+import static com.cricket.fantasyleague.util.MatchTimeUtils.nowDateTime;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,15 +18,19 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.cricket.fantasyleague.cache.LiveMatchCache;
 import com.cricket.fantasyleague.cache.LiveMatchUserCache;
+import com.cricket.fantasyleague.entity.table.FantasyPlayerConfig;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.Player;
 import com.cricket.fantasyleague.entity.table.PlayerPoints;
+import com.cricket.fantasyleague.entity.table.User;
 import com.cricket.fantasyleague.entity.table.UserMatchStats;
 import com.cricket.fantasyleague.entity.table.UserOverallStats;
 import com.cricket.fantasyleague.payload.ApiResponse;
+import com.cricket.fantasyleague.repository.FantasyPlayerConfigRepository;
 import com.cricket.fantasyleague.repository.PlayerPointsRepository;
 import com.cricket.fantasyleague.repository.UserMatchStatsRespository;
 import com.cricket.fantasyleague.repository.UserOverallStatsRepository;
+import com.cricket.fantasyleague.repository.UserRepository;
 import com.cricket.fantasyleague.service.match.MatchService;
 import com.cricket.fantasyleague.service.masterdata.MasterDataConfigService;
 import com.cricket.fantasyleague.service.playerpoints.LiveMatchPlayerPointsService;
@@ -54,6 +59,8 @@ public class TestController {
     private final PlayerPointsRepository playerPointsRepository;
     private final UserMatchStatsRespository userMatchStatsRepository;
     private final UserOverallStatsRepository userOverallStatsRepository;
+    private final FantasyPlayerConfigRepository fantasyPlayerConfigRepository;
+    private final UserRepository userRepository;
 
     public TestController(TestWorkflowService testWorkflowService,
                           LiveMatchWorkflowService liveMatchWorkflowService,
@@ -68,7 +75,9 @@ public class TestController {
                           LiveMatchUserCache liveMatchUserCache,
                           PlayerPointsRepository playerPointsRepository,
                           UserMatchStatsRespository userMatchStatsRepository,
-                          UserOverallStatsRepository userOverallStatsRepository) {
+                          UserOverallStatsRepository userOverallStatsRepository,
+                          FantasyPlayerConfigRepository fantasyPlayerConfigRepository,
+                          UserRepository userRepository) {
         this.testWorkflowService = testWorkflowService;
         this.liveMatchWorkflowService = liveMatchWorkflowService;
         this.matchService = matchService;
@@ -83,6 +92,8 @@ public class TestController {
         this.playerPointsRepository = playerPointsRepository;
         this.userMatchStatsRepository = userMatchStatsRepository;
         this.userOverallStatsRepository = userOverallStatsRepository;
+        this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
+        this.userRepository = userRepository;
     }
 
     // ── TestWorkflowService ──
@@ -234,9 +245,9 @@ public class TestController {
 
     @GetMapping("/match/today")
     public ResponseEntity<Object> testTodayMatches() {
-        List<Match> matches = matchService.findMatchByDate(LocalDate.now());
+        List<Match> matches = matchService.findMatchByDate(nowDate());
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("date", LocalDate.now());
+        result.put("date", nowDate());
         result.put("count", matches.size());
         result.put("matchIds", matches.stream().map(Match::getId).toList());
         return ResponseEntity.ok(result);
@@ -244,7 +255,7 @@ public class TestController {
 
     @GetMapping("/match/upcoming")
     public ResponseEntity<Object> testUpcomingMatch() {
-        Match match = matchService.findUpcomingMatch(LocalDate.now(), LocalTime.now());
+        Match match = matchService.findUpcomingMatch(nowDate(), nowTime());
         if (match == null) {
             return ResponseEntity.ok(Map.of("message", "No upcoming match found"));
         }
@@ -312,7 +323,7 @@ public class TestController {
         userCache.put("hasDirtyData", liveMatchUserCache.hasDirtyData());
         result.put("liveMatchUserCache", userCache);
 
-        result.put("timestamp", LocalDateTime.now());
+        result.put("timestamp", nowDateTime());
         return ResponseEntity.ok(result);
     }
 
@@ -322,7 +333,7 @@ public class TestController {
         liveMatchUserCache.evictAll();
         return ResponseEntity.ok(Map.of(
                 "status", "all caches evicted",
-                "timestamp", LocalDateTime.now()));
+                "timestamp", nowDateTime()));
     }
 
     @PostMapping("/cache/evict/{matchId}")
@@ -332,7 +343,7 @@ public class TestController {
         return ResponseEntity.ok(Map.of(
                 "matchId", matchId,
                 "status", "match cache evicted",
-                "timestamp", LocalDateTime.now()));
+                "timestamp", nowDateTime()));
     }
 
     // ── READ: Player Points (DB) ──
@@ -404,6 +415,98 @@ public class TestController {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("userCount", rows.size());
         result.put("users", rows);
+        return ResponseEntity.ok(result);
+    }
+
+    // ── READ: User Match History (playing11 + player points + meta) ──
+
+    @GetMapping("/view/usermatch/{userId}/{matchId}")
+    public ResponseEntity<Map<String, Object>> viewUserMatchHistory(
+            @PathVariable Integer userId, @PathVariable Integer matchId) {
+
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "User not found: " + userId));
+        }
+        Match match = matchService.findMatchById(matchId);
+        if (match == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Match not found: " + matchId));
+        }
+
+        UserMatchStats ums = userMatchStatsRepository.findByMatchidAndUserid(match, user);
+        if (ums == null) {
+            return ResponseEntity.ok(Map.of("message",
+                    "No match data found for userId=" + userId + " matchId=" + matchId));
+        }
+
+        Map<Integer, Double> ppMap = new java.util.HashMap<>();
+        List<PlayerPoints> allPP = playerPointsRepository.findByMatchId(matchId);
+        for (PlayerPoints pp : allPP) {
+            ppMap.put(pp.getPlayerId(), pp.getPlayerpoints());
+        }
+
+        List<Map<String, Object>> playing11Rows = new java.util.ArrayList<>();
+        List<Player> squad = ums.getPlaying11();
+        if (squad != null) {
+            for (Player p : squad) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("playerId", p.getId());
+                row.put("name", p.getName());
+                row.put("role", p.getRole());
+                row.put("points", ppMap.getOrDefault(p.getId(), 0.0));
+
+                boolean isCaptain = ums.getCaptainid() != null && p.getId().equals(ums.getCaptainid().getId());
+                boolean isViceCaptain = ums.getVicecaptainid() != null && p.getId().equals(ums.getVicecaptainid().getId());
+                boolean isTripleScorer = ums.getTripleboosterplayerid() != null && p.getId().equals(ums.getTripleboosterplayerid().getId());
+                if (isCaptain) row.put("tag", "CAPTAIN");
+                else if (isViceCaptain) row.put("tag", "VICE_CAPTAIN");
+                else if (isTripleScorer) row.put("tag", "TRIPLE_SCORER");
+
+                playing11Rows.add(row);
+            }
+        }
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("userId", userId);
+        meta.put("username", user.getUsername());
+        meta.put("matchId", matchId);
+        meta.put("matchPoints", ums.getMatchpoints());
+        meta.put("boosterUsed", ums.getBoosterused());
+        meta.put("transfersUsed", ums.getTransferused());
+        meta.put("captainId", ums.getCaptainid() != null ? ums.getCaptainid().getId() : null);
+        meta.put("captainName", ums.getCaptainid() != null ? ums.getCaptainid().getName() : null);
+        meta.put("viceCaptainId", ums.getVicecaptainid() != null ? ums.getVicecaptainid().getId() : null);
+        meta.put("viceCaptainName", ums.getVicecaptainid() != null ? ums.getVicecaptainid().getName() : null);
+        meta.put("tripleScorerId", ums.getTripleboosterplayerid() != null ? ums.getTripleboosterplayerid().getId() : null);
+        meta.put("tripleScorer", ums.getTripleboosterplayerid() != null ? ums.getTripleboosterplayerid().getName() : null);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("meta", meta);
+        result.put("playing11", playing11Rows);
+        return ResponseEntity.ok(result);
+    }
+
+    // ── READ: Player Overall Points (from fantasy_player_config.total_points) ──
+
+    @GetMapping("/view/playerpoints/overall/{leagueId}")
+    public ResponseEntity<Map<String, Object>> viewPlayerOverallPoints(@PathVariable Integer leagueId) {
+        List<FantasyPlayerConfig> configs = fantasyPlayerConfigRepository.findByLeagueId(leagueId);
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (FantasyPlayerConfig cfg : configs) {
+            if (cfg.getTotalPoints() == null || cfg.getTotalPoints() == 0.0) continue;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("playerId", cfg.getPlayerId());
+            row.put("totalPoints", cfg.getTotalPoints());
+            row.put("credit", cfg.getCredit());
+            row.put("type", cfg.getType());
+            rows.add(row);
+        }
+        rows.sort((a, b) -> Double.compare(
+                (Double) b.get("totalPoints"), (Double) a.get("totalPoints")));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("leagueId", leagueId);
+        result.put("playerCount", rows.size());
+        result.put("players", rows);
         return ResponseEntity.ok(result);
     }
 }

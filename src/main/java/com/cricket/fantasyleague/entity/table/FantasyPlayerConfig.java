@@ -38,6 +38,9 @@ public class FantasyPlayerConfig
 
     private Boolean uncapped ;
 
+    @Column(name = "total_points")
+    private Double totalPoints = 0.0;
+
     @Column(name = "is_active")
     private Boolean isActive = true ;
 

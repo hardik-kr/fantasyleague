@@ -95,6 +95,10 @@ public class UserTransferPersistServiceImpl {
         return userMatchStatsDraftRepository.findAllByMatchid(match);
     }
 
+    public void deleteAllDrafts(List<UserMatchStatsDraft> drafts) {
+        userMatchStatsDraftRepository.deleteAll(drafts);
+    }
+
     @Transactional
     public void saveDraft(UserMatchStatsDraft draft) {
         try {
@@ -139,6 +143,18 @@ public class UserTransferPersistServiceImpl {
     public void saveAllMatchStats(List<UserMatchStats> statsList) {
         try {
             userMatchStatsRepository.saveAll(statsList);
+        } catch (Exception e) {
+            Throwable cause = extractCause(e);
+            throw new CommonException(String.format(
+                    AppConstants.error.DATABASE_ERROR,
+                    AppConstants.entity.USERMATCHSTATSDRAFT,
+                    cause.getMessage()));
+        }
+    }
+
+    public void saveAllDrafts(List<UserMatchStatsDraft> drafts) {
+        try {
+            userMatchStatsDraftRepository.saveAll(drafts);
         } catch (Exception e) {
             Throwable cause = extractCause(e);
             throw new CommonException(String.format(
