@@ -1,9 +1,9 @@
 package com.cricket.fantasyleague.service.workflow;
 
 import static com.cricket.fantasyleague.util.MatchTimeUtils.nowDateTime;
-import static com.cricket.fantasyleague.util.MatchTimeUtils.nowTime;
+import static com.cricket.fantasyleague.util.MatchTimeUtils.toIST;
 
-import java.time.LocalTime;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -234,12 +234,15 @@ public class LiveMatchWorkflowService {
 
     private List<Match> getLiveMatches() {
         List<Match> todayMatches = liveMatchCache.getTodayMatches();
-        LocalTime now = nowTime();
+        LocalDateTime now = nowDateTime();
 
         List<Match> live = new ArrayList<>();
         for (Match match : todayMatches) {
-            if (now.isAfter(match.getTime())) {
-                live.add(match);
+            if (match.getDate() != null && match.getTime() != null) {
+                LocalDateTime matchStart = toIST(match.getDate(), match.getTime(), match.getTimezone());
+                if (now.isAfter(matchStart)) {
+                    live.add(match);
+                }
             }
         }
         return live;
