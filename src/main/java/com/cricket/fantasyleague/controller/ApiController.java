@@ -229,6 +229,9 @@ public class ApiController {
         result.put("transferLeft", overall != null ? overall.getTransferleft() : 0);
         result.put("boosterLeft", overall != null ? overall.getBoosterleft() : 0);
         result.put("isFreeTransferWindow", freeTransferMatchIds.contains(nextMatch.getId()));
+        result.put("usedBoosters", overall != null
+                ? overall.getUsedBoosterSet().stream().map(Enum::name).toList()
+                : List.of());
 
         Match prevMatch = matchService.findPreviousMatch(nextMatch);
         if (prevMatch != null) {

@@ -76,6 +76,10 @@ public class UserTransferServiceImpl implements UserTransferService {
             if (boostersLeft <= 0) {
                 throw new InvalidTeamException("No boosters remaining for this season");
             }
+            if (overallStats != null && overallStats.getUsedBoosterSet().contains(userTransferDto.getBoosterid())) {
+                throw new InvalidTeamException(
+                        "Booster " + userTransferDto.getBoosterid() + " has already been used in a previous match");
+            }
         }
         boolean isSuperTransfer = userTransferDto.getBoosterid() == Booster.SUPER_TRANSFER;
         if (!isFreeTransferWindow && !isSuperTransfer && prevMatch != null) {
@@ -298,6 +302,7 @@ public class UserTransferServiceImpl implements UserTransferService {
                             ? overall.getBoosterleft() - 1
                             : 0;
                     overall.setBoosterleft(Math.max(newBoosterLeft, 0));
+                    overall.addUsedBooster(draft.getBoosterused());
                 }
                 overallBatch.add(overall);
             }
