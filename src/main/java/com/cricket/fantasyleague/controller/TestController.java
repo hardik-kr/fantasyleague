@@ -486,6 +486,49 @@ public class TestController {
         return ResponseEntity.ok(result);
     }
 
+    // ── Health / Data Consistency ──
+
+    @GetMapping("/health/data-consistency")
+    public ResponseEntity<Map<String, Object>> checkDataConsistency() {
+        Map<Integer, Double> correctByUser = new LinkedHashMap<>();
+        for (Object[] row : userMatchStatsRepository.sumMatchPointsByUser()) {
+            Integer userId = (Integer) row[0];
+            Double sum = row[1] instanceof Number ? ((Number) row[1]).doubleValue() : 0.0;
+            correctByUser.put(userId, sum);
+        }
+
+        List<UserOverallStats> allStats = userOverallStatsRepository.findAll();
+        List<Map<String, Object>> mismatches = new java.util.ArrayList<>();
+
+        for (UserOverallStats uos : allStats) {
+            if (uos.getUserid() == null) continue;
+            Integer userId = uos.getUserid().getId();
+            double expected = correctByUser.getOrDefault(userId, 0.0);
+            double actual = uos.getTotalpoints() != null ? uos.getTotalpoints() : 0.0;
+            double prevPts = uos.getPrevpoints() != null ? uos.getPrevpoints() : 0.0;
+
+            if (Math.abs(actual - expected) > 0.01 || Math.abs(prevPts - expected) > 0.01) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("userId", userId);
+                row.put("username", uos.getUserid().getUsername());
+                row.put("totalpoints", actual);
+                row.put("prevpoints", prevPts);
+                row.put("expectedFromMatchStats", expected);
+                row.put("totalDiff", actual - expected);
+                row.put("prevDiff", prevPts - expected);
+                mismatches.add(row);
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("status", mismatches.isEmpty() ? "OK" : "WARN");
+        result.put("totalUsers", allStats.size());
+        result.put("mismatchCount", mismatches.size());
+        result.put("mismatches", mismatches);
+        result.put("timestamp", nowDateTime());
+        return ResponseEntity.ok(result);
+    }
+
     // ── READ: Player Overall Points (from fantasy_player_config.total_points) ──
 
     @GetMapping("/view/playerpoints/overall/{leagueId}")
