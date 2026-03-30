@@ -73,8 +73,42 @@ public class LiveMatchUserCache {
                 overallStatsByUserId.put(o.getUserid().getId(), o);
             }
         }
+
+        healPrevPoints();
+
         overallDirty = false;
         logger.info("Loaded {} UserOverallStats from DB", overallStatsByUserId.size());
+    }
+
+    /**
+     * Cross-validates prevpoints against the actual SUM(user_match_stats.matchpoints).
+     * Auto-corrects any mismatch so the pipeline starts from a clean baseline.
+     * One-time cost at match warmUp, not in the hot loop.
+     */
+    private void healPrevPoints() {
+        Map<Integer, Double> correctByUser = new HashMap<>();
+        for (Object[] row : userMatchStatsRepository.sumMatchPointsByUser()) {
+            Integer userId = (Integer) row[0];
+            Double sum = row[1] instanceof Number ? ((Number) row[1]).doubleValue() : 0.0;
+            correctByUser.put(userId, sum);
+        }
+
+        int healed = 0;
+        for (Map.Entry<Integer, UserOverallStats> entry : overallStatsByUserId.entrySet()) {
+            UserOverallStats overall = entry.getValue();
+            double expected = correctByUser.getOrDefault(entry.getKey(), 0.0);
+            double current = overall.getPrevpoints() != null ? overall.getPrevpoints() : 0.0;
+            if (Math.abs(current - expected) > 0.01) {
+                logger.warn("Self-healing prevpoints for userId={}: {} -> {}", entry.getKey(), current, expected);
+                overall.setPrevpoints(expected);
+                overall.setTotalpoints(expected);
+                healed++;
+            }
+        }
+        if (healed > 0) {
+            overallDirty = true;
+            logger.info("Healed prevpoints for {} user(s)", healed);
+        }
     }
 
     public List<UserMatchStats> getUserMatchStats(Integer matchId) {

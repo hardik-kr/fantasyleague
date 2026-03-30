@@ -19,11 +19,13 @@ import org.springframework.stereotype.Service;
 
 import com.cricket.fantasyleague.cache.LiveMatchCache;
 import com.cricket.fantasyleague.cache.LiveMatchUserCache;
+import com.cricket.fantasyleague.entity.enums.MatchState;
 import com.cricket.fantasyleague.entity.table.FantasyPlayerConfig;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.PlayerPoints;
 import com.cricket.fantasyleague.repository.FantasyPlayerConfigRepository;
 import com.cricket.fantasyleague.repository.PlayerPointsRepository;
+import com.cricket.fantasyleague.service.match.MatchService;
 import com.cricket.fantasyleague.service.playerpoints.LiveMatchPlayerPointsPersistServiceImpl;
 import com.cricket.fantasyleague.service.playerpoints.LiveMatchPlayerPointsService;
 import com.cricket.fantasyleague.service.usermatchstats.UserMatchStatsService;
@@ -53,6 +55,7 @@ public class LiveMatchWorkflowService {
     private final UserMatchStatsService userMatchStatsService;
     private final UserOverallPtsService userOverallPtsService;
     private final UserTransferService userTransferService;
+    private final MatchService matchService;
     private final FantasyPlayerConfigRepository fantasyPlayerConfigRepository;
     private final PlayerPointsRepository playerPointsRepository;
     private final Executor taskExecutor;
@@ -68,6 +71,7 @@ public class LiveMatchWorkflowService {
                                     UserMatchStatsService userMatchStatsService,
                                     UserOverallPtsService userOverallPtsService,
                                     UserTransferService userTransferService,
+                                    MatchService matchService,
                                     FantasyPlayerConfigRepository fantasyPlayerConfigRepository,
                                     PlayerPointsRepository playerPointsRepository,
                                     @Qualifier("fantasyTaskExecutor") Executor taskExecutor) {
@@ -78,6 +82,7 @@ public class LiveMatchWorkflowService {
         this.userMatchStatsService = userMatchStatsService;
         this.userOverallPtsService = userOverallPtsService;
         this.userTransferService = userTransferService;
+        this.matchService = matchService;
         this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
         this.playerPointsRepository = playerPointsRepository;
         this.taskExecutor = taskExecutor;
@@ -96,6 +101,12 @@ public class LiveMatchWorkflowService {
 
         liveMatchUserCache.warmUp(match);
 
+        // Snapshot player-config baselines BEFORE player-points calculation.
+        // getOrInitPlayerPoints() eagerly saves IN_PLAYING11 (4 pts) to the DB;
+        // if we init baselines after that save, the baseline picks up that 4 and
+        // goes negative, causing total_points to be permanently 4 less.
+        ensurePlayerConfigInitialized(match);
+
         // Job1: calculate player points (synchronous — scorecard HTTP call)
         Map<Integer, Double> playerPointsMap = playerPointsService.calculatePlayerPoints(match);
 
@@ -111,7 +122,13 @@ public class LiveMatchWorkflowService {
         logger.info("Pipeline END for matchId={} at {}", match.getId(), nowDateTime());
 
         if (Boolean.TRUE.equals(match.getIsMatchComplete())) {
-            finalFlushAndEvict(match);
+            Match freshMatch = matchService.findMatchById(match.getId());
+            if (freshMatch != null && freshMatch.getMatchState() == MatchState.COMPLETE) {
+                finalFlushAndEvict(match);
+            } else {
+                logger.warn("matchId={} has isMatchComplete=true but matchState={} — skipping finalization",
+                        match.getId(), freshMatch != null ? freshMatch.getMatchState() : "null");
+            }
         }
     }
 
@@ -130,19 +147,28 @@ public class LiveMatchWorkflowService {
     }
 
     /**
-     * On each pipeline tick, updates fantasy_player_config.total_points
-     * as baseline (pre-match total) + current match points.
-     * First call per match flushes any stale configs from previous matches,
-     * then snapshots the baseline from the DB.
+     * Ensures the player-config baseline cache is initialised for the given match.
+     * Must be called BEFORE calculatePlayerPoints(), because that method eagerly
+     * persists IN_PLAYING11 (4 pts) to the player_points table; if we snapshot
+     * baselines after that write, the baseline becomes (dbTotal − 4) instead of
+     * (dbTotal − 0), permanently under-counting total_points by 4.
      */
-    private void updatePlayerTotalPointsLive(Match match, Map<Integer, Double> playerPointsMap) {
+    private void ensurePlayerConfigInitialized(Match match) {
         Integer leagueId = match.getLeagueId();
-        if (leagueId == null || playerPointsMap.isEmpty()) return;
-
+        if (leagueId == null) return;
         if (!playerConfigByMatch.containsKey(match.getId())) {
             flushAndEvictStalePlayerConfigs();
             initPlayerConfigCache(match.getId(), leagueId);
         }
+    }
+
+    /**
+     * On each pipeline tick, updates fantasy_player_config.total_points
+     * as baseline (pre-match total) + current match points.
+     */
+    private void updatePlayerTotalPointsLive(Match match, Map<Integer, Double> playerPointsMap) {
+        Integer leagueId = match.getLeagueId();
+        if (leagueId == null || playerPointsMap.isEmpty()) return;
 
         Map<Integer, FantasyPlayerConfig> configMap = playerConfigByMatch.get(match.getId());
         Map<Integer, Double> baselines = playerBaselineByMatch.get(match.getId());
