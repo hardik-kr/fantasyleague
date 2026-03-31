@@ -31,7 +31,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final Logger logger = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     private static final Set<String> PUBLIC_PATHS = Set.of(
-            "/auth/login", "/auth/signup", "/api/loadtest", "/api/masterdata", "/test/");
+            "/auth/login", "/auth/signup/", "/api/loadtest", "/api/masterdata", "/test/");
 
     private final JwtHelper jwtHelper;
     private final UserService userService;

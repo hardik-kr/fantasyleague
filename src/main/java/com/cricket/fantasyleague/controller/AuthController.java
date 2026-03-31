@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.cricket.fantasyleague.payload.ApiResponse;
+import com.cricket.fantasyleague.payload.dto.OtpVerifyRequest;
 import com.cricket.fantasyleague.payload.dto.UserDto;
 import com.cricket.fantasyleague.payload.jwtdto.JwtRequest;
 import com.cricket.fantasyleague.payload.jwtdto.JwtResponse;
@@ -29,8 +30,13 @@ public class AuthController {
         return authWorkflowService.login(request);
     }
 
-    @PostMapping("/signup")
-    public ResponseEntity<ApiResponse> fetchPlayers(@Valid @RequestBody UserDto request) {
-        return authWorkflowService.signup(request);
+    @PostMapping("/signup/initiate")
+    public ResponseEntity<ApiResponse> initiateSignup(@Valid @RequestBody UserDto request) {
+        return authWorkflowService.initiateSignup(request);
+    }
+
+    @PostMapping("/signup/verify")
+    public ResponseEntity<ApiResponse> verifySignup(@Valid @RequestBody OtpVerifyRequest request) {
+        return authWorkflowService.verifySignup(request);
     }
 }
