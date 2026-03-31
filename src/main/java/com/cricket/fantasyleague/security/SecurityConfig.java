@@ -28,6 +28,9 @@ public class SecurityConfig
     private JwtAuthenticationFilter filter;
 
     @Autowired
+    private RateLimitFilter rateLimitFilter;
+
+    @Autowired
     private UserDetailsService userDetailsService ;
 
     @Autowired
@@ -42,14 +45,15 @@ public class SecurityConfig
     {
         http.csrf(csrf->csrf.disable())
             .cors(cors->cors.disable())
-            .authorizeHttpRequests(auth->auth.requestMatchers("/auth/login","/auth/signup","/api/loadtest/**","/api/masterdata/**","/test/**").permitAll()
+            .authorizeHttpRequests(auth->auth.requestMatchers("/auth/login","/auth/signup/**","/api/loadtest/**","/api/masterdata/**","/test/**").permitAll()
             .requestMatchers("/season/**").hasAnyAuthority(UserRole.USER.name())
             .anyRequest().authenticated())
             .exceptionHandling(ex->ex.authenticationEntryPoint(point)
                                     .accessDeniedHandler(customAccessDeniedException))
             .sessionManagement(session->session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) ;
         
-        http.addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class) ;
+        http.addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class) ;
+        http.addFilterAfter(filter, RateLimitFilter.class) ;
         return http.build() ;
     }
 

@@ -73,6 +73,20 @@ public class GlobalExceptionHandler
         return new ResponseEntity<>(resp, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse> illegalArgument(IllegalArgumentException ie)
+    {
+        ApiResponse resp = new ApiResponse(ie.getMessage(), false, HttpStatus.BAD_REQUEST.value(), HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(resp, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ApiResponse> illegalState(IllegalStateException ie)
+    {
+        ApiResponse resp = new ApiResponse(ie.getMessage(), false, HttpStatus.TOO_MANY_REQUESTS.value(), HttpStatus.TOO_MANY_REQUESTS);
+        return new ResponseEntity<>(resp, HttpStatus.TOO_MANY_REQUESTS);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse> catchAll(Exception ex)
     {

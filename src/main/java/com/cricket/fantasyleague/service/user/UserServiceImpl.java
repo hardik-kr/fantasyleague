@@ -25,7 +25,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     }
 
     @Override
-    public void createUser(UserDto inpuser) {
+    public void validateNewUser(UserDto inpuser) {
         User existByEmail = persistService.findByEmail(inpuser.getEmail());
         if (existByEmail != null) {
             throw new ResourceAlreadyExist(AppConstants.user.ALREADY_EXIST, "email", inpuser.getEmail());
@@ -34,6 +34,11 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         if (existByUsername != null) {
             throw new ResourceAlreadyExist(AppConstants.user.ALREADY_EXIST, "username", inpuser.getUsername());
         }
+    }
+
+    @Override
+    public void createUser(UserDto inpuser) {
+        validateNewUser(inpuser);
         User user = buildUserFromDto(inpuser);
         persistService.saveUser(user);
         initializeUserOverallStats(user);

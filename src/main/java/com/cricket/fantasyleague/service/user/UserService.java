@@ -9,6 +9,7 @@ import com.cricket.fantasyleague.payload.dto.UserDto;
 
 public interface UserService 
 {
+    void validateNewUser(UserDto userdto) ;
     void createUser(UserDto userdto) ;
     UserDetails getUserByUserName(String username) ;
     UserDetails loadUserByUsername(String username) ;

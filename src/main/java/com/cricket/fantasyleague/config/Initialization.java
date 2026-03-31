@@ -1,5 +1,6 @@
 package com.cricket.fantasyleague.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -13,6 +14,18 @@ public class Initialization implements CommandLineRunner {
 
     private final UserPersistServiceImpl userPersistService;
 
+    @Value("${admin.username}")
+    private String adminUsername;
+
+    @Value("${admin.firstname}")
+    private String adminFirstname;
+
+    @Value("${admin.email}")
+    private String adminEmail;
+
+    @Value("${admin.password}")
+    private String adminPassword;
+
     public Initialization(UserPersistServiceImpl userPersistService) {
         this.userPersistService = userPersistService;
     }
@@ -22,10 +35,10 @@ public class Initialization implements CommandLineRunner {
         User adminuser = userPersistService.findByRole(UserRole.ADMIN);
         if (adminuser == null) {
             adminuser = new User();
-            adminuser.setUsername("admin");
-            adminuser.setFirstname("Admin");
-            adminuser.setEmail("admin@gmail.com");
-            adminuser.setPassword(new BCryptPasswordEncoder().encode("password"));
+            adminuser.setUsername(adminUsername);
+            adminuser.setFirstname(adminFirstname);
+            adminuser.setEmail(adminEmail);
+            adminuser.setPassword(new BCryptPasswordEncoder().encode(adminPassword));
             adminuser.setRole(UserRole.ADMIN);
             userPersistService.saveUser(adminuser);
         }
