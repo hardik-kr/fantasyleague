@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.cricket.fantasyleague.dao.CricketEntityMapper;
 import com.cricket.fantasyleague.dao.CricketMasterDataDao;
@@ -35,9 +36,10 @@ public class LiveMatchPlayerPointsPersistServiceImpl {
         return playerPointsRepository.findByMatchId(match.getId());
     }
 
+    @Transactional
     public void saveAllPlayerPoints(List<PlayerPoints> records) {
         try {
-            playerPointsRepository.saveAll(records);
+            playerPointsRepository.saveAllAndFlush(records);
         } catch (Exception e) {
             Throwable cause = e.getCause() == null ? e : e.getCause();
             throw new CommonException(String.format(

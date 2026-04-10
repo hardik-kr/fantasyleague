@@ -3,12 +3,14 @@ package com.cricket.fantasyleague.entity.enums;
 public enum MatchState {
     PREVIEW,
     UPCOMING,
+    DELAY,
     IN_PROGRESS,
     COMPLETE;
 
     /**
      * Converts an API string to the corresponding enum constant.
-     * Handles variations like "Live", "Innings Break", "Stumps", "Toss", etc.
+     * Handles variations like "Live", "Innings Break", "Stumps", "Toss",
+     * "Delay", etc.
      */
     public static MatchState fromApiValue(String value) {
         if (value == null || value.isBlank()) return null;
@@ -16,7 +18,7 @@ public enum MatchState {
         try {
             return valueOf(normalized);
         } catch (IllegalArgumentException e) {
-            // Map known live-game states to IN_PROGRESS
+            // Map known live-game states
         }
         switch (normalized) {
             case "LIVE":
@@ -28,8 +30,21 @@ public enum MatchState {
             case "DRINKS":
             case "STRATEGIC_TIMEOUT":
                 return IN_PROGRESS;
+            case "DELAY":
+            case "RAIN_DELAY":
+            case "WET_OUTFIELD":
+            case "DELAYED":
+                return DELAY;
             default:
                 return null;
         }
+    }
+
+    public boolean isMatchActuallyLive() {
+        return this == IN_PROGRESS;
+    }
+
+    public boolean isDelayed() {
+        return this == DELAY;
     }
 }

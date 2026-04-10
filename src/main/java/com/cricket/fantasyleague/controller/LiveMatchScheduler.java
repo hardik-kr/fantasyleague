@@ -25,6 +25,7 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.PreDestroy;
 
 import com.cricket.fantasyleague.cache.LiveMatchCache;
+import com.cricket.fantasyleague.entity.enums.MatchState;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.UserOverallStats;
 import com.cricket.fantasyleague.repository.UserMatchStatsRespository;
@@ -38,9 +39,12 @@ public class LiveMatchScheduler {
     private static final Logger logger = LoggerFactory.getLogger(LiveMatchScheduler.class);
 
     private static final long LIVE_POLL_MS = 30_000;          // 30s — in-memory calc cycle
+    private static final long DELAY_POLL_MS = 120_000;       // 2min — weather/toss delay
     private static final long IDLE_POLL_MS = 3_600_000;
     private static final long PRE_MATCH_BUFFER_MS = 600_000;
     private static final long FLUSH_INTERVAL_MS = 300_000;   // 5min — DB write cycle
+
+    private volatile boolean lastPollHadDelay = false;
 
     private final LiveMatchWorkflowService liveMatchWorkflowService;
     private final LiveMatchCache liveMatchCache;
@@ -147,6 +151,7 @@ public class LiveMatchScheduler {
 
         LocalDateTime now = nowDateTime();
         int liveCount = 0;
+        boolean anyDelayed = false;
 
         for (Match match : todayMatches) {
             if (!isStarted(match, now)) {
@@ -165,6 +170,13 @@ public class LiveMatchScheduler {
                     }
                 }
                 lockedMatchIds.remove(match.getId());
+                continue;
+            }
+
+            if (isDelayed(match)) {
+                anyDelayed = true;
+                logger.info("matchId={} is DELAYED — teams remain unlocked, pipeline skipped", match.getId());
+                liveCount++;
                 continue;
             }
 
@@ -191,8 +203,11 @@ public class LiveMatchScheduler {
             }
         }
 
+        lastPollHadDelay = anyDelayed;
+
         if (liveCount > 0) {
-            logger.info("Poll cycle complete — {} live match(es) processed", liveCount);
+            logger.info("Poll cycle complete — {} live match(es) processed{}",
+                    liveCount, anyDelayed ? " (delay detected)" : "");
         }
     }
 
@@ -205,8 +220,10 @@ public class LiveMatchScheduler {
         long delayMs;
 
         if (hasLiveMatch(todayMatches)) {
-            delayMs = LIVE_POLL_MS;
-            logger.info("Live match detected — next poll in {}s", delayMs / 1000);
+            delayMs = lastPollHadDelay ? DELAY_POLL_MS : LIVE_POLL_MS;
+            logger.info("{} — next poll in {}s",
+                    lastPollHadDelay ? "Match delayed (weather/toss)" : "Live match detected",
+                    delayMs / 1000);
         } else {
             LocalDateTime nextStart = findNextMatchStart(todayMatches);
             Match nextMatch = null;
@@ -269,6 +286,10 @@ public class LiveMatchScheduler {
         if (match.getDate() == null || match.getTime() == null) return false;
         LocalDateTime matchStart = toIST(match.getDate(), match.getTime(), match.getTimezone());
         return now.isAfter(matchStart);
+    }
+
+    private boolean isDelayed(Match match) {
+        return match.getMatchState() == MatchState.DELAY;
     }
 
     private boolean isCompleted(Match match) {
