@@ -95,7 +95,7 @@ public class LiveMatchCache {
             return entry.value;
         }
 
-        List<Match> matches = matchService.findMatchByDate(nowDate());
+        List<Match> matches = matchService.findCandidateMatches(nowDate());
         todayMatchesEntry = new CachedEntry<>(matches);
         return matches;
     }

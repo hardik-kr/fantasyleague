@@ -49,6 +49,17 @@ public class CricketMasterDataDao {
         return jdbc.query(sql, new MapSqlParameterSource("date", date), MATCH_MAPPER);
     }
 
+    public List<MatchData> findCandidateMatches(LocalDate today) {
+        String sql = "SELECT " + MATCH_COLS + " FROM matches m" +
+                " WHERE m.date = :today" +
+                " OR (m.date = :yesterday AND (m.is_match_complete IS NULL OR m.is_match_complete = false))" +
+                " ORDER BY m.date ASC, m.time ASC";
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("today", today)
+                .addValue("yesterday", today.minusDays(1));
+        return jdbc.query(sql, params, MATCH_MAPPER);
+    }
+
     public Optional<MatchData> findUpcomingMatch(LocalDate currDate, LocalTime currTime) {
         String sql = "SELECT " + MATCH_COLS + " FROM matches m" +
                 " WHERE (m.date > :currDate OR (m.date = :currDate AND m.time > :currTime))" +

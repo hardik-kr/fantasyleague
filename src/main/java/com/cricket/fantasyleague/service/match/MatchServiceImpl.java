@@ -36,6 +36,13 @@ public class MatchServiceImpl implements MatchService {
     }
 
     @Override
+    public List<Match> findCandidateMatches(LocalDate today) {
+        return dao.findCandidateMatches(today).stream()
+                .map(cricketEntities::toMatch)
+                .toList();
+    }
+
+    @Override
     public Match findUpcomingMatch(LocalDate currdate, LocalTime currtime) {
         return dao.findUpcomingMatch(currdate, currtime)
                 .map(cricketEntities::toMatch)
