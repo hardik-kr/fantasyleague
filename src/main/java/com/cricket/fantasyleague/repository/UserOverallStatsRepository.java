@@ -15,10 +15,12 @@ public interface UserOverallStatsRepository extends JpaRepository<UserOverallSta
     @Transactional
     @Modifying
     @Query(value = "UPDATE user_overall_stats uos" +
-            " JOIN (SELECT user_id, COALESCE(SUM(matchpoints), 0) AS correct_pts" +
-            "       FROM user_match_stats GROUP BY user_id) ums" +
+            " LEFT JOIN (SELECT user_id, COALESCE(SUM(matchpoints), 0) AS correct_pts" +
+            "            FROM user_match_stats GROUP BY user_id) ums" +
             " ON uos.user_id = ums.user_id" +
-            " SET uos.totalpoints = ums.correct_pts, uos.prevpoints = ums.correct_pts" +
-            " WHERE ABS(COALESCE(uos.totalpoints, 0) - ums.correct_pts) > 0.01", nativeQuery = true)
+            " SET uos.totalpoints = COALESCE(ums.correct_pts, 0)," +
+            "     uos.prevpoints = COALESCE(ums.correct_pts, 0)" +
+            " WHERE ABS(COALESCE(uos.totalpoints, 0) - COALESCE(ums.correct_pts, 0)) > 0.01",
+            nativeQuery = true)
     int syncTotalPointsFromMatchStats();
 }

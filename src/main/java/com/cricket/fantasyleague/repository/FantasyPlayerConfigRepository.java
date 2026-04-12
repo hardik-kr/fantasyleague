@@ -20,10 +20,11 @@ public interface FantasyPlayerConfigRepository extends JpaRepository<FantasyPlay
     @Transactional
     @Modifying
     @Query(value = "UPDATE fantasy_player_config fpc" +
-            " JOIN (SELECT player_id, COALESCE(SUM(playerpoints), 0) AS correct_pts" +
-            "       FROM player_points GROUP BY player_id) pp" +
+            " LEFT JOIN (SELECT player_id, COALESCE(SUM(playerpoints), 0) AS correct_pts" +
+            "            FROM player_points GROUP BY player_id) pp" +
             " ON fpc.player_id = pp.player_id" +
-            " SET fpc.total_points = pp.correct_pts" +
-            " WHERE ABS(fpc.total_points - pp.correct_pts) > 0.01", nativeQuery = true)
+            " SET fpc.total_points = COALESCE(pp.correct_pts, 0)" +
+            " WHERE ABS(COALESCE(fpc.total_points, 0) - COALESCE(pp.correct_pts, 0)) > 0.01",
+            nativeQuery = true)
     int syncTotalPointsFromPlayerPoints();
 }
