@@ -6,10 +6,7 @@ import static com.cricket.fantasyleague.util.MatchTimeUtils.toIST;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
@@ -27,7 +24,7 @@ import jakarta.annotation.PreDestroy;
 import com.cricket.fantasyleague.cache.LiveMatchCache;
 import com.cricket.fantasyleague.entity.enums.MatchState;
 import com.cricket.fantasyleague.entity.table.Match;
-import com.cricket.fantasyleague.entity.table.UserOverallStats;
+import com.cricket.fantasyleague.repository.FantasyPlayerConfigRepository;
 import com.cricket.fantasyleague.repository.UserMatchStatsRespository;
 import com.cricket.fantasyleague.repository.UserOverallStatsRepository;
 import com.cricket.fantasyleague.service.match.MatchService;
@@ -52,6 +49,7 @@ public class LiveMatchScheduler {
     private final TaskScheduler taskScheduler;
     private final UserMatchStatsRespository userMatchStatsRepository;
     private final UserOverallStatsRepository userOverallStatsRepository;
+    private final FantasyPlayerConfigRepository fantasyPlayerConfigRepository;
 
     @Value("${fantasy.smart.scheduler.enabled:false}")
     private boolean smartSchedulerEnabled;
@@ -66,13 +64,15 @@ public class LiveMatchScheduler {
                               MatchService matchService,
                               TaskScheduler taskScheduler,
                               UserMatchStatsRespository userMatchStatsRepository,
-                              UserOverallStatsRepository userOverallStatsRepository) {
+                              UserOverallStatsRepository userOverallStatsRepository,
+                              FantasyPlayerConfigRepository fantasyPlayerConfigRepository) {
         this.liveMatchWorkflowService = liveMatchWorkflowService;
         this.liveMatchCache = liveMatchCache;
         this.matchService = matchService;
         this.taskScheduler = taskScheduler;
         this.userMatchStatsRepository = userMatchStatsRepository;
         this.userOverallStatsRepository = userOverallStatsRepository;
+        this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -93,43 +93,38 @@ public class LiveMatchScheduler {
     }
 
     /**
-     * Startup consistency check: compares user_overall_stats.totalpoints with
-     * the actual SUM of user_match_stats.matchpoints. Logs warnings for any
-     * discrepancy and auto-corrects so the first live match starts clean.
+     * Startup consistency check: compares denormalized totals with the actual
+     * SUM from detail tables. Logs warnings for any discrepancy and auto-corrects
+     * so the first live match starts clean.
      */
     private void validateDataIntegrity() {
+        validateUserPointsIntegrity();
+        validatePlayerPointsIntegrity();
+    }
+
+    private void validateUserPointsIntegrity() {
         try {
-            Map<Integer, Double> correctByUser = new HashMap<>();
-            for (Object[] row : userMatchStatsRepository.sumMatchPointsByUser()) {
-                Integer userId = (Integer) row[0];
-                Double sum = row[1] instanceof Number ? ((Number) row[1]).doubleValue() : 0.0;
-                correctByUser.put(userId, sum);
-            }
-
-            List<UserOverallStats> allStats = userOverallStatsRepository.findAll();
-            List<UserOverallStats> toFix = new ArrayList<>();
-            for (UserOverallStats uos : allStats) {
-                if (uos.getUserid() == null) continue;
-                Integer userId = uos.getUserid().getId();
-                double expected = correctByUser.getOrDefault(userId, 0.0);
-                double actual = uos.getTotalpoints() != null ? uos.getTotalpoints() : 0.0;
-                if (Math.abs(actual - expected) > 0.01) {
-                    logger.warn("STARTUP INTEGRITY: userId={} totalpoints={} but SUM(matchpoints)={}, correcting",
-                            userId, actual, expected);
-                    uos.setTotalpoints(expected);
-                    uos.setPrevpoints(expected);
-                    toFix.add(uos);
-                }
-            }
-
-            if (!toFix.isEmpty()) {
-                userOverallStatsRepository.saveAll(toFix);
-                logger.warn("STARTUP INTEGRITY: corrected {} user(s) with mismatched totalpoints", toFix.size());
+            int corrected = userOverallStatsRepository.syncTotalPointsFromMatchStats();
+            if (corrected > 0) {
+                logger.warn("STARTUP INTEGRITY: corrected {} user(s) with mismatched totalpoints", corrected);
             } else {
                 logger.info("STARTUP INTEGRITY: all user totalpoints consistent");
             }
         } catch (Exception ex) {
-            logger.error("Startup data integrity check failed: {}", ex.getMessage(), ex);
+            logger.error("Startup user points integrity check failed: {}", ex.getMessage(), ex);
+        }
+    }
+
+    private void validatePlayerPointsIntegrity() {
+        try {
+            int corrected = fantasyPlayerConfigRepository.syncTotalPointsFromPlayerPoints();
+            if (corrected > 0) {
+                logger.warn("STARTUP INTEGRITY: corrected {} player(s) with mismatched total_points", corrected);
+            } else {
+                logger.info("STARTUP INTEGRITY: all player total_points consistent");
+            }
+        } catch (Exception ex) {
+            logger.error("Startup player points integrity check failed: {}", ex.getMessage(), ex);
         }
     }
 

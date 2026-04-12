@@ -4,6 +4,9 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.cricket.fantasyleague.entity.table.FantasyPlayerConfig;
 
@@ -13,4 +16,14 @@ public interface FantasyPlayerConfigRepository extends JpaRepository<FantasyPlay
     List<FantasyPlayerConfig> findByLeagueId(Integer leagueId) ;
     List<FantasyPlayerConfig> findByPlayerId(Integer playerId) ;
     List<FantasyPlayerConfig> findByLeagueIdAndIsActiveTrue(Integer leagueId) ;
+
+    @Transactional
+    @Modifying
+    @Query(value = "UPDATE fantasy_player_config fpc" +
+            " JOIN (SELECT player_id, COALESCE(SUM(playerpoints), 0) AS correct_pts" +
+            "       FROM player_points GROUP BY player_id) pp" +
+            " ON fpc.player_id = pp.player_id" +
+            " SET fpc.total_points = pp.correct_pts" +
+            " WHERE ABS(fpc.total_points - pp.correct_pts) > 0.01", nativeQuery = true)
+    int syncTotalPointsFromPlayerPoints();
 }
