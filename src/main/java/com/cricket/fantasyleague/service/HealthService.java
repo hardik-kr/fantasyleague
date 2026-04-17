@@ -1,13 +1,16 @@
 package com.cricket.fantasyleague.service;
 
 import com.cricket.fantasyleague.payload.dto.SystemInfoResponse;
+import com.cricket.fantasyleague.payload.dto.SystemInfoResponse.BufferPoolInfo;
 import com.cricket.fantasyleague.payload.dto.SystemInfoResponse.GcInfo;
 import com.cricket.fantasyleague.payload.dto.SystemInfoResponse.MemoryInfo;
-import com.cricket.fantasyleague.payload.dto.SystemInfoResponse.ThreadInfo;
 
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.lang.management.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 
@@ -22,18 +25,22 @@ public class HealthService {
         OperatingSystemMXBean os = ManagementFactory.getOperatingSystemMXBean();
         ThreadMXBean threads = ManagementFactory.getThreadMXBean();
         MemoryUsage heap = mem.getHeapMemoryUsage();
+        MemoryUsage nonHeap = mem.getNonHeapMemoryUsage();
 
         long cpuTimeNs = ProcessHandle.current().info().totalCpuDuration()
                 .map(Duration::toNanos).orElse(-1L);
 
         MemoryInfo memory = new MemoryInfo(
                 heap.getUsed(),
+                heap.getCommitted(),
                 heap.getMax(),
                 heap.getMax() > 0 ? Math.round((double) heap.getUsed() / heap.getMax() * 100) : 0,
-                mem.getNonHeapMemoryUsage().getUsed()
+                nonHeap.getUsed(),
+                nonHeap.getCommitted(),
+                getProcessRssBytes()
         );
 
-        ThreadInfo threadInfo = new ThreadInfo(
+        var threadInfo = new SystemInfoResponse.ThreadInfo(
                 threads.getThreadCount(),
                 threads.getPeakThreadCount(),
                 threads.getDaemonThreadCount()
@@ -41,6 +48,10 @@ public class HealthService {
 
         List<GcInfo> gcList = ManagementFactory.getGarbageCollectorMXBeans().stream()
                 .map(gc -> new GcInfo(gc.getName(), gc.getCollectionCount(), gc.getCollectionTime()))
+                .toList();
+
+        List<BufferPoolInfo> bufferPools = ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class).stream()
+                .map(bp -> new BufferPoolInfo(bp.getName(), bp.getCount(), bp.getMemoryUsed(), bp.getTotalCapacity()))
                 .toList();
 
         return new SystemInfoResponse(
@@ -55,8 +66,23 @@ public class HealthService {
                 cpuTimeNs > 0 ? formatDuration(Duration.ofNanos(cpuTimeNs)) : "N/A",
                 memory,
                 threadInfo,
-                gcList
+                gcList,
+                bufferPools
         );
+    }
+
+    private long getProcessRssBytes() {
+        try {
+            String status = Files.readString(Path.of("/proc/self/status"));
+            for (String line : status.split("\n")) {
+                if (line.startsWith("VmRSS:")) {
+                    String kb = line.replaceAll("[^0-9]", "");
+                    return Long.parseLong(kb) * 1024;
+                }
+            }
+        } catch (IOException | NumberFormatException ignored) {
+        }
+        return -1;
     }
 
     private String formatDuration(Duration d) {

@@ -17,14 +17,18 @@ public record SystemInfoResponse(
         String cpuTime,
         MemoryInfo memory,
         ThreadInfo threads,
-        List<GcInfo> gc
+        List<GcInfo> gc,
+        List<BufferPoolInfo> bufferPools
 ) {
 
     public record MemoryInfo(
             long heapUsed,
+            long heapCommitted,
             long heapMax,
             long heapPercent,
-            long nonHeapUsed
+            long nonHeapUsed,
+            long nonHeapCommitted,
+            long rss
     ) {}
 
     public record ThreadInfo(
@@ -37,5 +41,12 @@ public record SystemInfoResponse(
             String name,
             long collections,
             long timeMs
+    ) {}
+
+    public record BufferPoolInfo(
+            String name,
+            long count,
+            long memoryUsed,
+            long totalCapacity
     ) {}
 }
