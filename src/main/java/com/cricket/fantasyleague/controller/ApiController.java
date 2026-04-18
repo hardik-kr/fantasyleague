@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.cricket.fantasyleague.entity.table.User;
 import com.cricket.fantasyleague.exception.ResourceNotFoundException;
 import com.cricket.fantasyleague.payload.response.DraftResponse;
-import com.cricket.fantasyleague.payload.response.LeaderboardEntry;
+import com.cricket.fantasyleague.payload.response.LeaderboardPageResponse;
 import com.cricket.fantasyleague.payload.response.MatchHistoryResponse;
 import com.cricket.fantasyleague.payload.response.MatchPlayerPointsResponse;
 import com.cricket.fantasyleague.payload.response.MatchResponse;
@@ -86,8 +86,12 @@ public class ApiController {
     }
 
     @GetMapping("/leaderboard")
-    public ResponseEntity<List<LeaderboardEntry>> getLeaderboard() {
-        return ResponseEntity.ok(leaderboardService.getRankedLeaderboard());
+    public ResponseEntity<LeaderboardPageResponse> getLeaderboard(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        int clampedSize = Math.min(size, 100);
+        return ResponseEntity.ok(leaderboardService.getRankedLeaderboard(
+                page, clampedSize, getAuthenticatedUser()));
     }
 
     @GetMapping("/points/{matchId}")

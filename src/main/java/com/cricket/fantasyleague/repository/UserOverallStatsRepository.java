@@ -1,8 +1,11 @@
 package com.cricket.fantasyleague.repository;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.cricket.fantasyleague.entity.table.User;
@@ -11,6 +14,12 @@ import com.cricket.fantasyleague.entity.table.UserOverallStats;
 public interface UserOverallStatsRepository extends JpaRepository<UserOverallStats,Integer>
 {
     UserOverallStats findByUserid(User userid) ;
+
+    @Query("SELECT u FROM UserOverallStats u ORDER BY COALESCE(u.totalpoints, 0) DESC")
+    Page<UserOverallStats> findAllRanked(Pageable pageable);
+
+    @Query("SELECT COUNT(u) FROM UserOverallStats u WHERE COALESCE(u.totalpoints, 0) > COALESCE(:points, 0)")
+    long countUsersAbove(@Param("points") Double points);
 
     @Transactional
     @Modifying
