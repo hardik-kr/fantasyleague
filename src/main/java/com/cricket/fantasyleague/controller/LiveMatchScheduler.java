@@ -155,8 +155,9 @@ public class LiveMatchScheduler {
 
             if (isCompleted(match)) {
                 if (finalizedMatchIds.add(match.getId())) {
-                    logger.info("Finalizing completed matchId={} (recovery/transition)", match.getId());
+                    logger.info("Finalizing completed matchId={} — forcing fresh scorecard fetch", match.getId());
                     try {
+                        liveMatchCache.evictScorecard(match.getId());
                         liveMatchWorkflowService.processMatchPipeline(match);
                         logger.info("Finalization complete for matchId={}", match.getId());
                     } catch (Exception ex) {

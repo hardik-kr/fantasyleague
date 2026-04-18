@@ -134,6 +134,10 @@ public class LiveMatchCache {
         dirtyPlayerPointsMatchIds.remove(matchId);
     }
 
+    public void evictScorecard(Integer matchId) {
+        scorecardCache.remove(matchId);
+    }
+
     public void evictMatch(Integer matchId) {
         scorecardCache.remove(matchId);
         playerPointsRecords.remove(matchId);
