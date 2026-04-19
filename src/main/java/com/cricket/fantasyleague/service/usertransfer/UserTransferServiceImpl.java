@@ -295,7 +295,7 @@ public class UserTransferServiceImpl implements UserTransferService {
 
         for (int page = 0; page < totalPages; page++) {
             List<UserMatchStatsDraft> batch = persistService.findDraftPage(
-                    currMatch, PageRequest.of(page, lockBatchSize));
+                    currMatch, PageRequest.of(0, lockBatchSize));
 
             if (batch.isEmpty()) break;
 

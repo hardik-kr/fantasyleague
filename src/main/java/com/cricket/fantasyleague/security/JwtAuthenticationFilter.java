@@ -31,7 +31,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final Logger logger = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     private static final Set<String> PUBLIC_PATHS = Set.of(
-            "/auth/login", "/auth/signup/", "/api/loadtest", "/api/masterdata", "/test/");
+            "/auth/login", "/auth/signup/", "/api/loadtest", "/api/masterdata", "/test/",
+            "/actuator");
 
     private final JwtHelper jwtHelper;
     private final UserService userService;
@@ -51,7 +52,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         String requestHeader = request.getHeader("Authorization");
-        logger.info("Header : {}", requestHeader);
+        logger.debug("Header : {}", requestHeader);
 
         String username = null;
         String token = null;
@@ -74,7 +75,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 request.setAttribute("error_msg", String.format(AppConstants.jwt.JWT_SOMETHING_WENT_WRONG, e.getMessage()));
             }
         } else {
-            logger.info(AppConstants.jwt.JWT_INVALID_HEADER);
+            logger.debug(AppConstants.jwt.JWT_INVALID_HEADER);
             request.setAttribute("error_msg", AppConstants.jwt.JWT_INVALID_HEADER);
         }
 

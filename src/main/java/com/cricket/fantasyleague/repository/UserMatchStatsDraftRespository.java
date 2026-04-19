@@ -16,9 +16,12 @@ public interface UserMatchStatsDraftRespository extends JpaRepository<UserMatchS
     UserMatchStatsDraft findByMatchidAndUserid(Match matchid, User userid);
     List<UserMatchStatsDraft> findAllByMatchid(Match matchid);
 
+    @Query("SELECT d.id FROM UserMatchStatsDraft d WHERE d.matchid = :match ORDER BY d.id")
+    List<Integer> findIdsByMatchid(@Param("match") Match match, Pageable pageable);
+
     @Query("SELECT d FROM UserMatchStatsDraft d LEFT JOIN FETCH d.playing11 " +
-           "WHERE d.matchid = :match ORDER BY d.id")
-    List<UserMatchStatsDraft> findPageByMatchid(@Param("match") Match match, Pageable pageable);
+           "WHERE d.id IN :ids ORDER BY d.id")
+    List<UserMatchStatsDraft> findAllByIdInWithPlaying11(@Param("ids") List<Integer> ids);
 
     long countByMatchid(Match match);
 }
