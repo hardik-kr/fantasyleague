@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
@@ -20,7 +21,8 @@ public class JwtHelper {
 
     public static final long JWT_TOKEN_VALIDITY = 24 * 60 * 60;
 
-    private final String secret = "REDACTED_JWT_SECRET";
+    @Value("${jwt.secret}")
+    private String secret;
 
     private Key getSigningKey() {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));

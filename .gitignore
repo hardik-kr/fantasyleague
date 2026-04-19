@@ -32,3 +32,9 @@ build/
 ### VS Code ###
 .vscode/
 .DS_Store
+
+### Environment / Secrets ###
+application-vm.properties
+application-prod.properties
+.env
+.env.*
