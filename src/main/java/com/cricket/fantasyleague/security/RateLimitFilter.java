@@ -1,7 +1,9 @@
 package com.cricket.fantasyleague.security;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.time.Instant;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -23,6 +25,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private static final Logger logger = LoggerFactory.getLogger(RateLimitFilter.class);
     private static final int CLEANUP_THRESHOLD = 100;
+    private static final Set<String> LOOPBACK_ADDRS = Set.of(
+            "127.0.0.1", "0:0:0:0:0:0:0:1", "::1"
+    );
 
     @Value("${ratelimit.global.requests-per-minute:30}")
     private int globalLimit;
@@ -41,9 +46,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
+        String clientIp = resolveClientIp(request);
+
+        if (isLoopback(clientIp)) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         lazyCleanup();
 
-        String clientIp = resolveClientIp(request);
         String path = request.getServletPath();
         String method = request.getMethod();
 
@@ -99,6 +110,17 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return xff.split(",")[0].trim();
         }
         return request.getRemoteAddr();
+    }
+
+    private boolean isLoopback(String ip) {
+        if (LOOPBACK_ADDRS.contains(ip)) {
+            return true;
+        }
+        try {
+            return InetAddress.getByName(ip).isLoopbackAddress();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void lazyCleanup() {
