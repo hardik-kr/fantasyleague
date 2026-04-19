@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -174,6 +175,25 @@ public class UserTransferPersistServiceImpl {
                     AppConstants.entity.USEROVERALLPOINTS,
                     cause.getMessage()));
         }
+    }
+
+    public long countDraftsByMatch(Match match) {
+        return userMatchStatsDraftRepository.countByMatchid(match);
+    }
+
+    public List<UserMatchStatsDraft> findDraftPage(Match match, Pageable pageable) {
+        return userMatchStatsDraftRepository.findPageByMatchid(match, pageable);
+    }
+
+    public List<UserOverallStats> findOverallStatsForUsers(List<User> users) {
+        if (users == null || users.isEmpty()) return List.of();
+        return userOverallStatsRepository.findAllByUseridIn(users);
+    }
+
+    @Transactional
+    public void lockBatch(List<UserMatchStats> matchStatsList, List<UserOverallStats> overallStatsList) {
+        saveAllMatchStats(matchStatsList);
+        saveAllOverallStats(overallStatsList);
     }
 
     private Throwable extractCause(Exception e) {

@@ -7,10 +7,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,19 +44,26 @@ public class UserTransferServiceImpl implements UserTransferService {
     private final FantasyPlayerConfigRepository fantasyPlayerConfigRepository;
     private final CricketMasterDataDao cricketDao;
     private final Set<Integer> freeTransferMatchIds;
+    private final int lockBatchSize;
+    private final long lockBatchDelayMs;
 
     public UserTransferServiceImpl(UserTransferPersistServiceImpl persistService,
                                    MatchService matchService,
                                    FantasyPlayerConfigRepository fantasyPlayerConfigRepository,
                                    CricketMasterDataDao cricketDao,
-                                   @Value("${fantasy.free-transfer-match-ids:}") List<Integer> freeTransferMatchIdList) {
+                                   @Value("${fantasy.free-transfer-match-ids:}") List<Integer> freeTransferMatchIdList,
+                                   @Value("${fantasy.lock.batch-size:5000}") int lockBatchSize,
+                                   @Value("${fantasy.lock.batch-delay-ms:1000}") long lockBatchDelayMs) {
         this.persistService = persistService;
         this.matchService = matchService;
         this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
         this.cricketDao = cricketDao;
         this.freeTransferMatchIds = freeTransferMatchIdList != null && !freeTransferMatchIdList.isEmpty()
                 ? new HashSet<>(freeTransferMatchIdList) : Collections.emptySet();
+        this.lockBatchSize = lockBatchSize;
+        this.lockBatchDelayMs = lockBatchDelayMs;
         logger.info("Free transfer match IDs: {}", this.freeTransferMatchIds);
+        logger.info("Lock batch config: size={}, delay={}ms", lockBatchSize, lockBatchDelayMs);
     }
 
     @Override
@@ -267,64 +277,109 @@ public class UserTransferServiceImpl implements UserTransferService {
     }
 
     @Override
-    @Transactional
     public void lockMatchTeam(Match currMatch) {
-        List<UserMatchStatsDraft> allDrafts = persistService.findAllDraftsByMatch(currMatch);
-        if (allDrafts.isEmpty()) {
+        long totalDrafts = persistService.countDraftsByMatch(currMatch);
+        if (totalDrafts == 0) {
             logger.warn("No drafts found for matchId={}", currMatch.getId());
             return;
         }
 
-        List<UserMatchStats> matchStatsBatch = new ArrayList<>(allDrafts.size());
-        List<UserOverallStats> overallBatch = new ArrayList<>(allDrafts.size());
+        boolean freeWindow = freeTransferMatchIds.contains(currMatch.getId());
+        int totalPages = (int) Math.ceil((double) totalDrafts / lockBatchSize);
+        int totalLocked = 0;
 
-        for (UserMatchStatsDraft draft : allDrafts) {
-            User user = draft.getUserid();
-            if ("admin@gmail.com".equals(user.getEmail())) continue;
+        logger.info("lockMatchTeam: matchId={}, totalDrafts={}, batchSize={}, pages={}, delay={}ms",
+                currMatch.getId(), totalDrafts, lockBatchSize, totalPages, lockBatchDelayMs);
 
-            matchStatsBatch.add(new UserMatchStats(user, currMatch,
-                    draft.getBoosterused(), draft.getTransferused(),
-                    0.0, draft.getCaptainid(), draft.getVicecaptainid(),
-                    draft.getTripleboosterplayerid(), draft.getPlaying11()));
+        Match nextMatch = matchService.findUpcomingMatch(currMatch.getDate(), currMatch.getTime());
 
-            UserOverallStats overall = persistService.findOverallStatsByUser(user);
-            if (overall != null) {
-                overall.setPrevpoints(overall.getTotalpoints());
-                boolean freeWindow = freeTransferMatchIds.contains(currMatch.getId());
-                if (!freeWindow && draft.getTransferused() != null && draft.getTransferused() > 0) {
-                    int newTransferLeft = overall.getTransferleft() != null
-                            ? overall.getTransferleft() - draft.getTransferused()
-                            : 0;
-                    overall.setTransferleft(Math.max(newTransferLeft, 0));
+        for (int page = 0; page < totalPages; page++) {
+            List<UserMatchStatsDraft> batch = persistService.findDraftPage(
+                    currMatch, PageRequest.of(page, lockBatchSize));
+
+            if (batch.isEmpty()) break;
+
+            List<User> users = batch.stream()
+                    .map(UserMatchStatsDraft::getUserid)
+                    .filter(u -> !"admin@gmail.com".equals(u.getEmail()))
+                    .toList();
+
+            Map<Integer, UserOverallStats> overallMap = persistService.findOverallStatsForUsers(users)
+                    .stream()
+                    .collect(Collectors.toMap(o -> o.getUserid().getId(), Function.identity()));
+
+            List<UserMatchStats> matchStatsList = new ArrayList<>(batch.size());
+            List<UserOverallStats> overallUpdates = new ArrayList<>(batch.size());
+            List<UserMatchStatsDraft> draftUpdates = new ArrayList<>(batch.size());
+
+            for (UserMatchStatsDraft draft : batch) {
+                User user = draft.getUserid();
+                if ("admin@gmail.com".equals(user.getEmail())) {
+                    draftUpdates.add(draft);
+                    continue;
                 }
-                if (draft.getBoosterused() != null) {
-                    int newBoosterLeft = overall.getBoosterleft() != null
-                            ? overall.getBoosterleft() - 1
-                            : 0;
-                    overall.setBoosterleft(Math.max(newBoosterLeft, 0));
-                    overall.addUsedBooster(draft.getBoosterused());
+
+                matchStatsList.add(new UserMatchStats(user, currMatch,
+                        draft.getBoosterused(), draft.getTransferused(),
+                        0.0, draft.getCaptainid(), draft.getVicecaptainid(),
+                        draft.getTripleboosterplayerid(), draft.getPlaying11()));
+
+                UserOverallStats overall = overallMap.get(user.getId());
+                if (overall != null) {
+                    overall.setPrevpoints(overall.getTotalpoints());
+                    if (!freeWindow && draft.getTransferused() != null && draft.getTransferused() > 0) {
+                        int newTransferLeft = overall.getTransferleft() != null
+                                ? overall.getTransferleft() - draft.getTransferused()
+                                : 0;
+                        overall.setTransferleft(Math.max(newTransferLeft, 0));
+                    }
+                    if (draft.getBoosterused() != null) {
+                        int newBoosterLeft = overall.getBoosterleft() != null
+                                ? overall.getBoosterleft() - 1
+                                : 0;
+                        overall.setBoosterleft(Math.max(newBoosterLeft, 0));
+                        overall.addUsedBooster(draft.getBoosterused());
+                    }
+                    overallUpdates.add(overall);
                 }
-                overallBatch.add(overall);
+
+                draftUpdates.add(draft);
+            }
+
+            persistService.lockBatch(matchStatsList, overallUpdates);
+            totalLocked += matchStatsList.size();
+
+            if (nextMatch != null) {
+                for (UserMatchStatsDraft draft : draftUpdates) {
+                    draft.setMatchid(nextMatch);
+                    draft.setTransferused(0);
+                    draft.setBoosterused(null);
+                }
+                persistService.saveAllDrafts(draftUpdates);
+            } else {
+                persistService.deleteAllDrafts(draftUpdates);
+            }
+
+            logger.info("lockMatchTeam: matchId={}, page {}/{}, batchLocked={}, totalLocked={}",
+                    currMatch.getId(), page + 1, totalPages, matchStatsList.size(), totalLocked);
+
+            if (page < totalPages - 1 && lockBatchDelayMs > 0) {
+                try {
+                    Thread.sleep(lockBatchDelayMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    logger.warn("lockMatchTeam interrupted at page {}/{}", page + 1, totalPages);
+                    break;
+                }
             }
         }
 
-        persistService.saveAllMatchStats(matchStatsBatch);
-        persistService.saveAllOverallStats(overallBatch);
-
-        Match nextMatch = matchService.findUpcomingMatch(currMatch.getDate(), currMatch.getTime());
         if (nextMatch != null) {
-            for (UserMatchStatsDraft draft : allDrafts) {
-                draft.setMatchid(nextMatch);
-                draft.setTransferused(0);
-                draft.setBoosterused(null);
-            }
-            persistService.saveAllDrafts(allDrafts);
-            logger.info("Locked {} user teams for matchId={}, drafts carried forward to matchId={}",
-                    matchStatsBatch.size(), currMatch.getId(), nextMatch.getId());
+            logger.info("lockMatchTeam complete: matchId={}, locked={}, drafts carried forward to matchId={}",
+                    currMatch.getId(), totalLocked, nextMatch.getId());
         } else {
-            persistService.deleteAllDrafts(allDrafts);
-            logger.info("Locked {} user teams for matchId={}, no next match — drafts deleted",
-                    matchStatsBatch.size(), currMatch.getId());
+            logger.info("lockMatchTeam complete: matchId={}, locked={}, no next match — drafts deleted",
+                    currMatch.getId(), totalLocked);
         }
     }
 }

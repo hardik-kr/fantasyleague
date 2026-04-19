@@ -1,5 +1,7 @@
 package com.cricket.fantasyleague.repository;
 
+import java.util.List;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,6 +16,8 @@ import com.cricket.fantasyleague.entity.table.UserOverallStats;
 public interface UserOverallStatsRepository extends JpaRepository<UserOverallStats,Integer>
 {
     UserOverallStats findByUserid(User userid) ;
+
+    List<UserOverallStats> findAllByUseridIn(List<User> users);
 
     @Query("SELECT u FROM UserOverallStats u ORDER BY COALESCE(u.totalpoints, 0) DESC")
     Page<UserOverallStats> findAllRanked(Pageable pageable);

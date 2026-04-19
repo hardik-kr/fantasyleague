@@ -183,7 +183,7 @@ public class LiveMatchScheduler {
                     try {
                         liveMatchWorkflowService.lockTeamsForMatch(match);
                         logger.info("Teams locked for matchId={}", match.getId());
-                    } catch (Exception ex) {
+                    } catch (Throwable ex) {
                         logger.error("Lock failed for matchId={}: {}", match.getId(), ex.getMessage(), ex);
                         lockedMatchIds.remove(match.getId());
                     }
