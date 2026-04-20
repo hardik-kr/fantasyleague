@@ -182,7 +182,7 @@ public class UserTransferPersistServiceImpl {
     }
 
     public List<UserMatchStatsDraft> findDraftPage(Match match, Pageable pageable) {
-        List<Integer> ids = userMatchStatsDraftRepository.findIdsByMatchid(match, pageable);
+        List<Long> ids = userMatchStatsDraftRepository.findIdsByMatchid(match, pageable);
         if (ids.isEmpty()) return List.of();
         return userMatchStatsDraftRepository.findAllByIdInWithPlaying11(ids);
     }

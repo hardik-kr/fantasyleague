@@ -13,5 +13,5 @@ public interface UserTeamService {
 
     List<MatchHistoryResponse> getMatchHistory(User user);
 
-    UserTeamResponse getUserTeamForMatch(Integer userId, Integer matchId);
+    UserTeamResponse getUserTeamForMatch(Long userId, Integer matchId);
 }

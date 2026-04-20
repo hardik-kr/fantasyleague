@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.cricket.fantasyleague.entity.table.User;
 import com.cricket.fantasyleague.entity.table.UserOverallStats;
 
-public interface UserOverallStatsRepository extends JpaRepository<UserOverallStats,Integer>
+public interface UserOverallStatsRepository extends JpaRepository<UserOverallStats, Long>
 {
     UserOverallStats findByUserid(User userid) ;
 

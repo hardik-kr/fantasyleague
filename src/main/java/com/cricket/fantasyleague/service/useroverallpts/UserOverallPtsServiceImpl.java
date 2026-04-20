@@ -22,13 +22,13 @@ public class UserOverallPtsServiceImpl implements UserOverallPtsService {
     }
 
     @Override
-    public void calcUserOverallPointsData(Match match, Map<Integer, Double> matchPointsByUserId) {
+    public void calcUserOverallPointsData(Match match, Map<Long, Double> matchPointsByUserId) {
         if (matchPointsByUserId.isEmpty()) return;
 
-        Map<Integer, UserOverallStats> overallByUserId = userCache.getOverallStatsByUserId();
+        Map<Long, UserOverallStats> overallByUserId = userCache.getOverallStatsByUserId();
 
         int updated = 0;
-        for (Map.Entry<Integer, Double> entry : matchPointsByUserId.entrySet()) {
+        for (Map.Entry<Long, Double> entry : matchPointsByUserId.entrySet()) {
             UserOverallStats overall = overallByUserId.get(entry.getKey());
             if (overall == null) continue;
 

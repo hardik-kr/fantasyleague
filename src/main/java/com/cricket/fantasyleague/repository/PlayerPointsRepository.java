@@ -9,7 +9,7 @@ import com.cricket.fantasyleague.entity.table.PlayerPoints;
 
 import jakarta.persistence.QueryHint;
 
-public interface PlayerPointsRepository extends JpaRepository<PlayerPoints, Integer>
+public interface PlayerPointsRepository extends JpaRepository<PlayerPoints, Long>
 {
     @QueryHints(@QueryHint(name = "org.hibernate.readOnly", value = "true"))
     List<PlayerPoints> findByMatchId(Integer matchId);

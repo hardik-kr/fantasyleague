@@ -1,12 +1,12 @@
 package com.cricket.fantasyleague.entity.table;
 
-import java.util.Random;
-
 import com.cricket.fantasyleague.entity.enums.UserRole;
+import com.cricket.fantasyleague.util.SnowflakeIdGenerator;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -18,7 +18,7 @@ import lombok.Data;
 public class User 
 {
     @Id
-    private Integer id ;
+    private Long id ;
 
     @Column(length = 30, unique = true, nullable = false)
     private String username ;
@@ -47,14 +47,13 @@ public class User
 
     public User() 
     {
-        this.id = generateId() ;
         this.isActive = true ;
     }
 
     public User(String username, String firstname, String lastname, String email, String password,
                 String phonenumber, String favteam, UserRole role) 
     {
-        this.id = generateId() ;
+        this.id = SnowflakeIdGenerator.generate();
         this.username = username;
         this.firstname = firstname;
         this.lastname = lastname;
@@ -66,18 +65,10 @@ public class User
         this.isActive = true;
     }
 
-    private Integer generateId() 
-    {
-        Random random = new Random();
-        StringBuilder id = new StringBuilder();
-
-        id.append(random.nextInt(9)+1) ;
-        
-        for (int i = 0; i < 5; i++) {
-            int digit = random.nextInt(9); // Generates a random digit between 0 and 9
-            id.append(digit);
+    @PrePersist
+    private void ensureId() {
+        if (this.id == null) {
+            this.id = SnowflakeIdGenerator.generate();
         }
-
-        return Integer.parseInt(id.toString()) ;
     }
 }

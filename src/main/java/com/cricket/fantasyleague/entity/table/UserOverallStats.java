@@ -2,17 +2,18 @@ package com.cricket.fantasyleague.entity.table;
 
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.cricket.fantasyleague.entity.enums.Booster;
+import com.cricket.fantasyleague.util.SnowflakeIdGenerator;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -26,7 +27,7 @@ import lombok.NoArgsConstructor;
 public class UserOverallStats 
 {
     @Id
-    private Integer id ;
+    private Long id ;
 
     @ManyToOne
     @JoinColumn(name = "user_id", referencedColumnName = "id")
@@ -43,9 +44,9 @@ public class UserOverallStats
     @Column(name = "used_boosters", length = 255)
     private String usedBoosters;
 
-    public UserOverallStats(User userid, Double totalpoints,Double prevpoints, Integer boosterleft, Integer transferleft) 
+    public UserOverallStats(User userid, Double totalpoints, Double prevpoints, Integer boosterleft, Integer transferleft) 
     {
-        this.id = generateId() ;
+        this.id = SnowflakeIdGenerator.generate();
         this.userid = userid;
         this.prevpoints = prevpoints ;
         this.totalpoints = totalpoints;
@@ -74,18 +75,10 @@ public class UserOverallStats
                 .collect(Collectors.joining(","));
     }
 
-    private Integer generateId() 
-    {
-        Random random = new Random();
-        StringBuilder id = new StringBuilder();
-
-        id.append(random.nextInt(9)+1) ;
-        
-        for (int i = 0; i < 5; i++) {
-            int digit = random.nextInt(9);
-            id.append(digit);
+    @PrePersist
+    private void ensureId() {
+        if (this.id == null) {
+            this.id = SnowflakeIdGenerator.generate();
         }
-
-        return Integer.parseInt(id.toString()) ;
     }
 }

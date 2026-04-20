@@ -40,7 +40,7 @@ public class UserMatchStatsServiceImpl implements UserMatchStatsService {
     }
 
     @Override
-    public Map<Integer, Double> calcMatchUserPointsData(Match match, Map<Integer, Double> playerPointsMap) {
+    public Map<Long, Double> calcMatchUserPointsData(Match match, Map<Integer, Double> playerPointsMap) {
         List<UserMatchStats> allStats = userCache.getUserMatchStats(match.getId());
         if (allStats.isEmpty()) return Map.of();
 
@@ -66,7 +66,7 @@ public class UserMatchStatsServiceImpl implements UserMatchStatsService {
 
         userCache.markMatchDirty(match.getId());
 
-        Map<Integer, Double> matchPointsByUser = new HashMap<>(userStats.size());
+        Map<Long, Double> matchPointsByUser = new HashMap<>(userStats.size());
         for (UserMatchStats stat : userStats) {
             matchPointsByUser.put(stat.getUserid().getId(),
                     stat.getMatchpoints() == null ? 0.0 : stat.getMatchpoints());

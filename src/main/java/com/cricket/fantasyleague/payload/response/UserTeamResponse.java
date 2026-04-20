@@ -9,7 +9,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 public record UserTeamResponse(
         boolean found,
         String message,
-        Integer userId,
+        Long userId,
         String username,
         String firstname,
         Integer matchId,

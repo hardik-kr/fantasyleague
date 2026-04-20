@@ -1,10 +1,11 @@
 package com.cricket.fantasyleague.entity.table;
 
-import java.util.Random;
+import com.cricket.fantasyleague.util.SnowflakeIdGenerator;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -16,7 +17,7 @@ import lombok.NoArgsConstructor;
 public class PlayerPoints 
 {
     @Id
-    private Integer id ;
+    private Long id ;
 
     /** FK to cricket match id (no JPA join — table may only exist in cricketapi DB). */
     @Column(name = "match_id")
@@ -30,24 +31,16 @@ public class PlayerPoints
 
     public PlayerPoints(Match match, Player player, Double playerpoints) 
     {
-        this.id = generateId() ;
+        this.id = SnowflakeIdGenerator.generate();
         this.matchId = match != null ? match.getId() : null;
         this.playerId = player != null ? player.getId() : null;
         this.playerpoints = playerpoints;
     }
 
-    private Integer generateId() 
-    {
-        Random random = new Random();
-        StringBuilder id = new StringBuilder();
-
-        id.append(random.nextInt(9)+1) ;
-        
-        for (int i = 0; i < 5; i++) {
-            int digit = random.nextInt(9);
-            id.append(digit);
+    @PrePersist
+    private void ensureId() {
+        if (this.id == null) {
+            this.id = SnowflakeIdGenerator.generate();
         }
-
-        return Integer.parseInt(id.toString()) ;
-    } 
+    }
 }

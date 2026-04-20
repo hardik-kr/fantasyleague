@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.cricket.fantasyleague.entity.table.FantasyPlayerConfig;
 
-public interface FantasyPlayerConfigRepository extends JpaRepository<FantasyPlayerConfig, Integer> 
+public interface FantasyPlayerConfigRepository extends JpaRepository<FantasyPlayerConfig, Long> 
 {
     Optional<FantasyPlayerConfig> findByPlayerIdAndLeagueId(Integer playerId, Integer leagueId) ;
     List<FantasyPlayerConfig> findByLeagueId(Integer leagueId) ;

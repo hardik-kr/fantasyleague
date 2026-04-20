@@ -304,7 +304,7 @@ public class UserTransferServiceImpl implements UserTransferService {
                     .filter(u -> !"admin@gmail.com".equals(u.getEmail()))
                     .toList();
 
-            Map<Integer, UserOverallStats> overallMap = persistService.findOverallStatsForUsers(users)
+            Map<Long, UserOverallStats> overallMap = persistService.findOverallStatsForUsers(users)
                     .stream()
                     .collect(Collectors.toMap(o -> o.getUserid().getId(), Function.identity()));
 

@@ -177,7 +177,7 @@ public class TestController {
             return ResponseEntity.badRequest().body(Map.of("error", "Match not found: " + matchId));
         }
         Map<Integer, Double> playerPointsMap = playerPointsService.calculatePlayerPoints(match);
-        Map<Integer, Double> userPoints = userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap);
+        Map<Long, Double> userPoints = userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap);
         long elapsed = System.currentTimeMillis() - start;
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -198,7 +198,7 @@ public class TestController {
             return ResponseEntity.badRequest().body(Map.of("error", "Match not found: " + matchId));
         }
         Map<Integer, Double> playerPointsMap = playerPointsService.calculatePlayerPoints(match);
-        Map<Integer, Double> userPoints = userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap);
+        Map<Long, Double> userPoints = userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap);
         userOverallPtsService.calcUserOverallPointsData(match, userPoints);
         long elapsed = System.currentTimeMillis() - start;
 
@@ -422,7 +422,7 @@ public class TestController {
 
     @GetMapping("/view/usermatch/{userId}/{matchId}")
     public ResponseEntity<Map<String, Object>> viewUserMatchHistory(
-            @PathVariable Integer userId, @PathVariable Integer matchId) {
+            @PathVariable Long userId, @PathVariable Integer matchId) {
 
         User user = userRepository.findById(userId).orElse(null);
         if (user == null) {
@@ -490,9 +490,9 @@ public class TestController {
 
     @GetMapping("/health/data-consistency")
     public ResponseEntity<Map<String, Object>> checkDataConsistency() {
-        Map<Integer, Double> correctByUser = new LinkedHashMap<>();
+        Map<Long, Double> correctByUser = new LinkedHashMap<>();
         for (Object[] row : userMatchStatsRepository.sumMatchPointsByUser()) {
-            Integer userId = (Integer) row[0];
+            Long userId = ((Number) row[0]).longValue();
             Double sum = row[1] instanceof Number ? ((Number) row[1]).doubleValue() : 0.0;
             correctByUser.put(userId, sum);
         }
@@ -502,7 +502,7 @@ public class TestController {
 
         for (UserOverallStats uos : allStats) {
             if (uos.getUserid() == null) continue;
-            Integer userId = uos.getUserid().getId();
+            Long userId = uos.getUserid().getId();
             double expected = correctByUser.getOrDefault(userId, 0.0);
             double actual = uos.getTotalpoints() != null ? uos.getTotalpoints() : 0.0;
             double prevPts = uos.getPrevpoints() != null ? uos.getPrevpoints() : 0.0;

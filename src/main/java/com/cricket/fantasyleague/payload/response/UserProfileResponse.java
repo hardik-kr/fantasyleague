@@ -1,7 +1,7 @@
 package com.cricket.fantasyleague.payload.response;
 
 public record UserProfileResponse(
-        Integer id,
+        Long id,
         String username,
         String firstname,
         String lastname,

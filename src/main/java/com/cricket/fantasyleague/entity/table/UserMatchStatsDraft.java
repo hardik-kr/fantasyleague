@@ -1,9 +1,9 @@
 package com.cricket.fantasyleague.entity.table;
 
 import java.util.List;
-import java.util.Random;
 
 import com.cricket.fantasyleague.entity.enums.Booster;
+import com.cricket.fantasyleague.util.SnowflakeIdGenerator;
 
 import jakarta.persistence.ConstraintMode;
 import jakarta.persistence.Entity;
@@ -14,6 +14,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -27,7 +28,7 @@ import lombok.NoArgsConstructor;
 public class UserMatchStatsDraft 
 {
     @Id
-    private Integer id ;
+    private Long id ;
 
     @ManyToOne
     @JoinColumn(name = "user_id", referencedColumnName = "id")
@@ -71,7 +72,7 @@ public class UserMatchStatsDraft
             Double matchpoints, Player captainid, Player vicecaptainid, Player tripleboosterplayerid,
             List<Player> playing11) 
     {
-        this.id = generateId();
+        this.id = SnowflakeIdGenerator.generate();
         this.userid = userid;
         this.matchid = matchid;
         this.boosterused = boosterused;
@@ -83,19 +84,10 @@ public class UserMatchStatsDraft
         this.playing11 = playing11;
     }
 
-    private Integer generateId() 
-    {
-        Random random = new Random();
-        StringBuilder id = new StringBuilder();
-
-        id.append(random.nextInt(9)+1) ;
-        
-        for (int i = 0; i < 5; i++) {
-            int digit = random.nextInt(9); // Generates a random digit between 0 and 9
-            id.append(digit);
+    @PrePersist
+    private void ensureId() {
+        if (this.id == null) {
+            this.id = SnowflakeIdGenerator.generate();
         }
-
-        return Integer.parseInt(id.toString()) ;
     }
-    
 }

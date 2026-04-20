@@ -166,7 +166,7 @@ public class UserTeamServiceImpl implements UserTeamService {
     }
 
     @Override
-    public UserTeamResponse getUserTeamForMatch(Integer userId, Integer matchId) {
+    public UserTeamResponse getUserTeamForMatch(Long userId, Integer matchId) {
         if (userId == null || matchId == null) {
             return new UserTeamResponse(false, "userId and matchId are required",
                     null, null, null, null, null, null, null, null, null, null);

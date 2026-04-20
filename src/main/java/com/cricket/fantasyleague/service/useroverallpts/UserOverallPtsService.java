@@ -10,5 +10,5 @@ public interface UserOverallPtsService {
      * Updates overall points for all users using the pre-computed match points map,
      * avoiding a redundant DB re-read of UserMatchStats.
      */
-    void calcUserOverallPointsData(Match match, Map<Integer, Double> matchPointsByUserId);
+    void calcUserOverallPointsData(Match match, Map<Long, Double> matchPointsByUserId);
 }

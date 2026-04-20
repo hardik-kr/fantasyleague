@@ -34,7 +34,7 @@ public class LiveMatchUserCache {
     private final UserOverallStatsRepository userOverallStatsRepository;
 
     private final ConcurrentHashMap<Integer, List<UserMatchStats>> matchStatsByMatchId = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Integer, UserOverallStats> overallStatsByUserId = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, UserOverallStats> overallStatsByUserId = new ConcurrentHashMap<>();
 
     private final Set<Integer> dirtyMatchIds = ConcurrentHashMap.newKeySet();
     private volatile boolean overallDirty = false;
@@ -86,15 +86,15 @@ public class LiveMatchUserCache {
      * One-time cost at match warmUp, not in the hot loop.
      */
     private void healPrevPoints() {
-        Map<Integer, Double> correctByUser = new HashMap<>();
+        Map<Long, Double> correctByUser = new HashMap<>();
         for (Object[] row : userMatchStatsRepository.sumMatchPointsByUser()) {
-            Integer userId = (Integer) row[0];
+            Long userId = ((Number) row[0]).longValue();
             Double sum = row[1] instanceof Number ? ((Number) row[1]).doubleValue() : 0.0;
             correctByUser.put(userId, sum);
         }
 
         int healed = 0;
-        for (Map.Entry<Integer, UserOverallStats> entry : overallStatsByUserId.entrySet()) {
+        for (Map.Entry<Long, UserOverallStats> entry : overallStatsByUserId.entrySet()) {
             UserOverallStats overall = entry.getValue();
             double expected = correctByUser.getOrDefault(entry.getKey(), 0.0);
             double current = overall.getPrevpoints() != null ? overall.getPrevpoints() : 0.0;
@@ -116,7 +116,7 @@ public class LiveMatchUserCache {
         return stats != null ? stats : Collections.emptyList();
     }
 
-    public Map<Integer, UserOverallStats> getOverallStatsByUserId() {
+    public Map<Long, UserOverallStats> getOverallStatsByUserId() {
         return Collections.unmodifiableMap(new HashMap<>(overallStatsByUserId));
     }
 

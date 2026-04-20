@@ -9,7 +9,7 @@ import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.User;
 import com.cricket.fantasyleague.entity.table.UserMatchStats;
 
-public interface UserMatchStatsRespository extends JpaRepository<UserMatchStats,Integer>
+public interface UserMatchStatsRespository extends JpaRepository<UserMatchStats, Long>
 {
     UserMatchStats findByMatchidAndUserid(Match matchid,User userid) ;
     List<UserMatchStats> findByMatchid(Match matchid) ;

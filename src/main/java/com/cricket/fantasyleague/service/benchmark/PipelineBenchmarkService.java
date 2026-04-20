@@ -45,7 +45,7 @@ import com.cricket.fantasyleague.service.useroverallpts.UserOverallPtsService;
 public class PipelineBenchmarkService {
 
     private static final Logger logger = LoggerFactory.getLogger(PipelineBenchmarkService.class);
-    private static final int ID_BASE = 800_000;
+    private static final long ID_BASE = 800_000L;
     private static final int PLAYING11_SIZE = 11;
 
     private final EntityManager em;
@@ -105,7 +105,7 @@ public class PipelineBenchmarkService {
         createFantasyConfigs(allPlayers);
 
         Match match = new Match();
-        match.setId(ID_BASE);
+        match.setId((int) ID_BASE);
         match.setDate(LocalDate.now());
         match.setTime(LocalTime.of(14, 0));
         match.setTimezone("Asia/Kolkata");
@@ -211,7 +211,7 @@ public class PipelineBenchmarkService {
             randomizePlayerPoints(fakePlayerPoints, new Random(i));
 
             long t0 = System.nanoTime();
-            Map<Integer, Double> matchPts = userMatchStatsService.calcMatchUserPointsData(match, fakePlayerPoints);
+            Map<Long, Double> matchPts = userMatchStatsService.calcMatchUserPointsData(match, fakePlayerPoints);
             long t1 = System.nanoTime();
             userOverallPtsService.calcUserOverallPointsData(match, matchPts);
             long t2 = System.nanoTime();
@@ -318,7 +318,7 @@ public class PipelineBenchmarkService {
                 .toList();
         fantasyPlayerConfigRepository.deleteAll(loadTestConfigs);
 
-        Match match = em.find(Match.class, ID_BASE);
+        Match match = em.find(Match.class, (int) ID_BASE);
         if (match != null) em.remove(match);
 
         int deletedPlayers = 0;

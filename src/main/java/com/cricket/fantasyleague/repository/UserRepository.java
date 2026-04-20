@@ -5,7 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import com.cricket.fantasyleague.entity.enums.UserRole;
 import com.cricket.fantasyleague.entity.table.User;
 
-public interface UserRepository extends JpaRepository<User,Integer> 
+public interface UserRepository extends JpaRepository<User, Long> 
 {
     User findByEmail(String email) ;
     User findByUsername(String username) ;

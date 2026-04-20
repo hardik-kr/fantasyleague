@@ -11,5 +11,5 @@ public interface UserMatchStatsService {
      * Returns a userId → matchPoints map so the caller can pass it directly
      * to the overall-points step without a redundant DB read.
      */
-    Map<Integer, Double> calcMatchUserPointsData(Match match, Map<Integer, Double> playerPointsMap);
+    Map<Long, Double> calcMatchUserPointsData(Match match, Map<Integer, Double> playerPointsMap);
 }
