@@ -8,6 +8,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -16,7 +17,8 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "fantasy_player_config")
+@Table(name = "fantasy_player_config",
+       uniqueConstraints = @UniqueConstraint(name = "uq_player_league", columnNames = {"player_id", "league_id"}))
 public class FantasyPlayerConfig 
 {
     @Id
