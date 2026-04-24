@@ -181,6 +181,16 @@ public class UserTransferPersistServiceImpl {
         return userMatchStatsDraftRepository.countByMatchid(match);
     }
 
+    /**
+     * Returns the subset of given user ids that already have UserMatchStats for this match.
+     * Enables per-row idempotency in lockMatchTeam: a user that was already locked in a prior
+     * (possibly crashed) attempt must not have booster/transfer decremented a second time.
+     */
+    public java.util.Set<Long> findAlreadyLockedUserIds(Match match, List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) return java.util.Set.of();
+        return new java.util.HashSet<>(userMatchStatsRepository.findLockedUserIds(match, userIds));
+    }
+
     public List<UserMatchStatsDraft> findDraftPage(Match match, Pageable pageable) {
         List<Long> ids = userMatchStatsDraftRepository.findIdsByMatchid(match, pageable);
         if (ids.isEmpty()) return List.of();

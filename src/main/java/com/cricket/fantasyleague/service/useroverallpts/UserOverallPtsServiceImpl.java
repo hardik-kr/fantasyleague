@@ -29,14 +29,17 @@ public class UserOverallPtsServiceImpl implements UserOverallPtsService {
 
         int updated = 0;
         for (Map.Entry<Long, Double> entry : matchPointsByUserId.entrySet()) {
-            UserOverallStats overall = overallByUserId.get(entry.getKey());
+            Long userId = entry.getKey();
+            UserOverallStats overall = overallByUserId.get(userId);
             if (overall == null) continue;
 
-            double prevPts = overall.getPrevpoints() == null ? 0.0 : overall.getPrevpoints();
-            overall.setTotalpoints(prevPts + entry.getValue());
+            double committed = userCache.getCommittedTotal(userId);
+            double liveSum = userCache.getLiveMatchpointsSum(userId);
+            overall.setTotalpoints(committed + liveSum);
             updated++;
         }
 
+        userCache.saveOverallStats(overallByUserId);
         userCache.markOverallDirty();
         logger.info("User overall points calculated for match {}: {} users updated", match.getId(), updated);
     }

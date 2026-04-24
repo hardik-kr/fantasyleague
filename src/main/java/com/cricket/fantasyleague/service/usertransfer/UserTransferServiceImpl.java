@@ -308,14 +308,32 @@ public class UserTransferServiceImpl implements UserTransferService {
                     .stream()
                     .collect(Collectors.toMap(o -> o.getUserid().getId(), Function.identity()));
 
+            // Per-row idempotency (EC-11): if a prior attempt crashed after lockBatch
+            // committed but before drafts were cleaned up, the same users would be
+            // revisited on resume. Without this check we'd insert duplicate
+            // UserMatchStats rows and double-decrement booster/transfer counters.
+            List<Long> batchUserIds = users.stream().map(User::getId).toList();
+            Set<Long> alreadyLockedUserIds = persistService
+                    .findAlreadyLockedUserIds(currMatch, batchUserIds);
+
             List<UserMatchStats> matchStatsList = new ArrayList<>(batch.size());
             List<UserOverallStats> overallUpdates = new ArrayList<>(batch.size());
             List<UserMatchStatsDraft> draftUpdates = new ArrayList<>(batch.size());
+            int skippedAlreadyLocked = 0;
 
             for (UserMatchStatsDraft draft : batch) {
                 User user = draft.getUserid();
                 if ("admin@gmail.com".equals(user.getEmail())) {
                     draftUpdates.add(draft);
+                    continue;
+                }
+
+                if (alreadyLockedUserIds.contains(user.getId())) {
+                    // Already inserted in a previous attempt: do NOT insert again and do
+                    // NOT decrement booster/transfer (those were already applied earlier).
+                    // Still forward/delete the draft so it's consumed exactly once.
+                    draftUpdates.add(draft);
+                    skippedAlreadyLocked++;
                     continue;
                 }
 
@@ -326,7 +344,11 @@ public class UserTransferServiceImpl implements UserTransferService {
 
                 UserOverallStats overall = overallMap.get(user.getId());
                 if (overall != null) {
-                    overall.setPrevpoints(overall.getTotalpoints());
+                    // Note: totalpoints/prevpoints are NOT touched here.
+                    // totalpoints is owned solely by the live-match pipeline
+                    // (UserOverallPtsServiceImpl) and is re-derived every tick as
+                    // committedTotal + SUM(live_matchpoints). Writing prevpoints
+                    // here was the primary source of the historical drift bug.
                     if (!freeWindow && draft.getTransferused() != null && draft.getTransferused() > 0) {
                         int newTransferLeft = overall.getTransferleft() != null
                                 ? overall.getTransferleft() - draft.getTransferused()
@@ -344,6 +366,11 @@ public class UserTransferServiceImpl implements UserTransferService {
                 }
 
                 draftUpdates.add(draft);
+            }
+
+            if (skippedAlreadyLocked > 0) {
+                logger.info("lockMatchTeam: matchId={}, page {}/{}, resumed — skipped {} already-locked user(s)",
+                        currMatch.getId(), page + 1, totalPages, skippedAlreadyLocked);
             }
 
             persistService.lockBatch(matchStatsList, overallUpdates);

@@ -64,6 +64,7 @@ public class UserMatchStatsServiceImpl implements UserMatchStatsService {
 
         CompletableFuture.allOf(futures).join();
 
+        userCache.saveMatchStats(match.getId(), allStats);
         userCache.markMatchDirty(match.getId());
 
         Map<Long, Double> matchPointsByUser = new HashMap<>(userStats.size());

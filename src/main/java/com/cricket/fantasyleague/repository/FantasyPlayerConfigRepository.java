@@ -17,6 +17,14 @@ public interface FantasyPlayerConfigRepository extends JpaRepository<FantasyPlay
     List<FantasyPlayerConfig> findByPlayerId(Integer playerId) ;
     List<FantasyPlayerConfig> findByLeagueIdAndIsActiveTrue(Integer leagueId) ;
 
+    /**
+     * Scoped player-config load: only the ~22-24 players relevant to the current
+     * match (as discovered from PlayerPoints). Avoids loading all ~250 league
+     * configs into cache per match. Late-discovered players (impact subs) fall
+     * back to findByPlayerIdAndLeagueId at calculation time.
+     */
+    List<FantasyPlayerConfig> findByLeagueIdAndPlayerIdIn(Integer leagueId, List<Integer> playerIds);
+
     @Transactional
     @Modifying
     @Query(value = "UPDATE fantasy_player_config fpc" +

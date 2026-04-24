@@ -25,6 +25,7 @@ import com.cricket.fantasyleague.cache.LiveMatchCache;
 import com.cricket.fantasyleague.entity.enums.MatchState;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.repository.FantasyPlayerConfigRepository;
+import com.cricket.fantasyleague.repository.UserMatchStatsDraftRespository;
 import com.cricket.fantasyleague.repository.UserMatchStatsRespository;
 import com.cricket.fantasyleague.repository.UserOverallStatsRepository;
 import com.cricket.fantasyleague.service.match.MatchService;
@@ -48,6 +49,7 @@ public class LiveMatchScheduler {
     private final MatchService matchService;
     private final TaskScheduler taskScheduler;
     private final UserMatchStatsRespository userMatchStatsRepository;
+    private final UserMatchStatsDraftRespository userMatchStatsDraftRepository;
     private final UserOverallStatsRepository userOverallStatsRepository;
     private final FantasyPlayerConfigRepository fantasyPlayerConfigRepository;
 
@@ -64,6 +66,7 @@ public class LiveMatchScheduler {
                               MatchService matchService,
                               TaskScheduler taskScheduler,
                               UserMatchStatsRespository userMatchStatsRepository,
+                              UserMatchStatsDraftRespository userMatchStatsDraftRepository,
                               UserOverallStatsRepository userOverallStatsRepository,
                               FantasyPlayerConfigRepository fantasyPlayerConfigRepository) {
         this.liveMatchWorkflowService = liveMatchWorkflowService;
@@ -71,6 +74,7 @@ public class LiveMatchScheduler {
         this.matchService = matchService;
         this.taskScheduler = taskScheduler;
         this.userMatchStatsRepository = userMatchStatsRepository;
+        this.userMatchStatsDraftRepository = userMatchStatsDraftRepository;
         this.userOverallStatsRepository = userOverallStatsRepository;
         this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
     }
@@ -177,9 +181,21 @@ public class LiveMatchScheduler {
             }
 
             if (lockedMatchIds.add(match.getId())) {
-                if (userMatchStatsRepository.existsByMatchid(match)) {
+                // Resumable lock (EC-3): drafts are the source of truth and are
+                // consumed atomically (forwarded/deleted) only AFTER lockBatch
+                // commits. If any drafts remain for this match, lockMatchTeam
+                // still has work to do — either it was never called, or it
+                // crashed midway. `existsByMatchid` alone is insufficient as a
+                // skip signal since a partial crash leaves some drafts behind.
+                long remainingDrafts = userMatchStatsDraftRepository.countByMatchid(match);
+                boolean anyLocked = userMatchStatsRepository.existsByMatchid(match);
+                if (remainingDrafts == 0 && anyLocked) {
                     logger.info("Teams already locked in DB for matchId={}, skipping", match.getId());
                 } else {
+                    if (anyLocked && remainingDrafts > 0) {
+                        logger.warn("Resuming partial lock for matchId={}: remainingDrafts={}",
+                                match.getId(), remainingDrafts);
+                    }
                     try {
                         liveMatchWorkflowService.lockTeamsForMatch(match);
                         logger.info("Teams locked for matchId={}", match.getId());

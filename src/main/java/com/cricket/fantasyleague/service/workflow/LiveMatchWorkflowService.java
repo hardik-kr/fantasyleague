@@ -11,14 +11,18 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.cricket.fantasyleague.cache.LiveMatchCache;
 import com.cricket.fantasyleague.cache.LiveMatchUserCache;
+import com.cricket.fantasyleague.cache.store.CacheStore;
+import com.cricket.fantasyleague.cache.store.CacheStoreFactory;
 import com.cricket.fantasyleague.entity.enums.MatchState;
 import com.cricket.fantasyleague.entity.table.FantasyPlayerConfig;
 import com.cricket.fantasyleague.entity.table.Match;
@@ -58,11 +62,31 @@ public class LiveMatchWorkflowService {
     private final MatchService matchService;
     private final FantasyPlayerConfigRepository fantasyPlayerConfigRepository;
     private final PlayerPointsRepository playerPointsRepository;
+    private final CacheStoreFactory cacheStoreFactory;
     private final Executor taskExecutor;
 
-    private final ConcurrentHashMap<Integer, Map<Integer, FantasyPlayerConfig>> playerConfigByMatch = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Integer, Map<Integer, Double>> playerBaselineByMatch = new ConcurrentHashMap<>();
+    @Value("${fantasy.cache.strategy:1}")
+    private int strategy;
+
+    // ── Strategy 1: in-memory ConcurrentHashMaps (current behavior) ──
+    private final ConcurrentHashMap<Integer, Map<Integer, FantasyPlayerConfig>> inMemPlayerConfig = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, Map<Integer, Double>> inMemPlayerBaseline = new ConcurrentHashMap<>();
+
+    // ── Strategy 2: Redis-backed CacheStores ──
+    private final ConcurrentHashMap<Integer, CacheStore<Integer, FantasyPlayerConfig>> redisConfigStores = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, CacheStore<Integer, Double>> redisBaselineStores = new ConcurrentHashMap<>();
+
     private volatile boolean playerConfigDirty = false;
+
+    /**
+     * Serializes the pipeline tick (in-memory mutations) with the periodic flush
+     * (cache → DB writes). Prevents torn reads/writes where a flush observes a
+     * partially updated in-memory state mid-tick, which could cause a subsequent
+     * warmUp on restart to pick up an inconsistent committedTotal snapshot.
+     * Both paths block each other for a short window; they run on different
+     * scheduler threads so this just orders them.
+     */
+    private final ReentrantLock pipelineFlushLock = new ReentrantLock();
 
     public LiveMatchWorkflowService(LiveMatchCache liveMatchCache,
                                     LiveMatchUserCache liveMatchUserCache,
@@ -74,6 +98,7 @@ public class LiveMatchWorkflowService {
                                     MatchService matchService,
                                     FantasyPlayerConfigRepository fantasyPlayerConfigRepository,
                                     PlayerPointsRepository playerPointsRepository,
+                                    CacheStoreFactory cacheStoreFactory,
                                     @Qualifier("fantasyTaskExecutor") Executor taskExecutor) {
         this.liveMatchCache = liveMatchCache;
         this.liveMatchUserCache = liveMatchUserCache;
@@ -85,50 +110,41 @@ public class LiveMatchWorkflowService {
         this.matchService = matchService;
         this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
         this.playerPointsRepository = playerPointsRepository;
+        this.cacheStoreFactory = cacheStoreFactory;
         this.taskExecutor = taskExecutor;
     }
 
-    /**
-     * Single-match pipeline entry point called by LiveMatchScheduler.
-     *
-     * Job1 (PlayerPoints) runs synchronously on the caller thread.
-     * Job2 (UserMatchPoints) + Job3 (UserOverallPoints) run async
-     * via CompletableFuture, chained so Job3 starts after Job2 delivers
-     * its matchPointsByUser map. join() blocks until both complete.
-     */
     public void processMatchPipeline(Match match) {
         logger.info("Pipeline START for matchId={} at {}", match.getId(), nowDateTime());
 
-        liveMatchUserCache.warmUp(match);
+        pipelineFlushLock.lock();
+        try {
+            liveMatchUserCache.warmUp(match);
+            ensurePlayerConfigInitialized(match);
 
-        // Snapshot player-config baselines BEFORE player-points calculation.
-        // getOrInitPlayerPoints() eagerly saves IN_PLAYING11 (4 pts) to the DB;
-        // if we init baselines after that save, the baseline picks up that 4 and
-        // goes negative, causing total_points to be permanently 4 less.
-        ensurePlayerConfigInitialized(match);
+            Map<Integer, Double> playerPointsMap = playerPointsService.calculatePlayerPoints(match);
 
-        // Job1: calculate player points (synchronous — scorecard HTTP call)
-        Map<Integer, Double> playerPointsMap = playerPointsService.calculatePlayerPoints(match);
+            CompletableFuture<Void> pipeline = CompletableFuture
+                    .supplyAsync(() -> userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap), taskExecutor)
+                    .thenAcceptAsync(matchPointsByUser -> userOverallPtsService.calcUserOverallPointsData(match, matchPointsByUser), taskExecutor);
 
-        // Job2 -> Job3 chain (async on fantasyTaskExecutor)
-        CompletableFuture<Void> pipeline = CompletableFuture
-                .supplyAsync(() -> userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap), taskExecutor)
-                .thenAcceptAsync(matchPointsByUser -> userOverallPtsService.calcUserOverallPointsData(match, matchPointsByUser), taskExecutor);
+            pipeline.join();
 
-        pipeline.join();
+            updatePlayerTotalPointsLive(match, playerPointsMap);
 
-        updatePlayerTotalPointsLive(match, playerPointsMap);
+            logger.info("Pipeline END for matchId={} at {}", match.getId(), nowDateTime());
 
-        logger.info("Pipeline END for matchId={} at {}", match.getId(), nowDateTime());
-
-        if (Boolean.TRUE.equals(match.getIsMatchComplete())) {
-            Match freshMatch = matchService.findMatchById(match.getId());
-            if (freshMatch != null && freshMatch.getMatchState() == MatchState.COMPLETE) {
-                finalFlushAndEvict(match);
-            } else {
-                logger.warn("matchId={} has isMatchComplete=true but matchState={} — skipping finalization",
-                        match.getId(), freshMatch != null ? freshMatch.getMatchState() : "null");
+            if (Boolean.TRUE.equals(match.getIsMatchComplete())) {
+                Match freshMatch = matchService.findMatchById(match.getId());
+                if (freshMatch != null && freshMatch.getMatchState() == MatchState.COMPLETE) {
+                    finalFlushAndEvict(match);
+                } else {
+                    logger.warn("matchId={} has isMatchComplete=true but matchState={} — skipping finalization",
+                            match.getId(), freshMatch != null ? freshMatch.getMatchState() : "null");
+                }
             }
+        } finally {
+            pipelineFlushLock.unlock();
         }
     }
 
@@ -138,7 +154,9 @@ public class LiveMatchWorkflowService {
             playerPointsPersist.saveAllPlayerPoints(records);
         }
         flushPlayerConfigToDB(match.getId());
-        liveMatchUserCache.promotePrevPoints();
+        // No promotePrevPoints: totalpoints is already correct from the last tick
+        // (totalpoints = committedTotal + SUM(live matchpoints)). The next match's
+        // warmUp re-derives committedTotal fresh from DB so no "promotion" is needed.
         liveMatchUserCache.flushToDB();
         liveMatchUserCache.evictMatch(match.getId());
         liveMatchCache.evictMatch(match.getId());
@@ -146,32 +164,40 @@ public class LiveMatchWorkflowService {
         logger.info("matchId={} complete — final flush done, cache evicted", match.getId());
     }
 
-    /**
-     * Ensures the player-config baseline cache is initialised for the given match.
-     * Must be called BEFORE calculatePlayerPoints(), because that method eagerly
-     * persists IN_PLAYING11 (4 pts) to the player_points table; if we snapshot
-     * baselines after that write, the baseline becomes (dbTotal − 4) instead of
-     * (dbTotal − 0), permanently under-counting total_points by 4.
-     */
     private void ensurePlayerConfigInitialized(Match match) {
         Integer leagueId = match.getLeagueId();
         if (leagueId == null) return;
-        if (!playerConfigByMatch.containsKey(match.getId())) {
+        if (!hasPlayerConfig(match.getId())) {
             flushAndEvictStalePlayerConfigs();
             initPlayerConfigCache(match.getId(), leagueId);
         }
     }
 
-    /**
-     * On each pipeline tick, updates fantasy_player_config.total_points
-     * as baseline (pre-match total) + current match points.
-     */
+    private boolean hasPlayerConfig(Integer matchId) {
+        if (strategy == 1) {
+            return inMemPlayerConfig.containsKey(matchId);
+        }
+        return redisConfigStores.containsKey(matchId);
+    }
+
     private void updatePlayerTotalPointsLive(Match match, Map<Integer, Double> playerPointsMap) {
         Integer leagueId = match.getLeagueId();
         if (leagueId == null || playerPointsMap.isEmpty()) return;
 
-        Map<Integer, FantasyPlayerConfig> configMap = playerConfigByMatch.get(match.getId());
-        Map<Integer, Double> baselines = playerBaselineByMatch.get(match.getId());
+        Map<Integer, FantasyPlayerConfig> configMap;
+        Map<Integer, Double> baselines;
+
+        if (strategy == 1) {
+            configMap = inMemPlayerConfig.get(match.getId());
+            baselines = inMemPlayerBaseline.get(match.getId());
+        } else {
+            CacheStore<Integer, FantasyPlayerConfig> cfgStore = redisConfigStores.get(match.getId());
+            CacheStore<Integer, Double> blStore = redisBaselineStores.get(match.getId());
+            if (cfgStore == null || blStore == null) return;
+            configMap = new HashMap<>(cfgStore.asMap());
+            baselines = new HashMap<>(blStore.asMap());
+        }
+
         if (configMap == null || baselines == null) return;
 
         int updated = 0;
@@ -193,32 +219,56 @@ public class LiveMatchWorkflowService {
 
         if (updated > 0) {
             playerConfigDirty = true;
+            if (strategy == 2) {
+                CacheStore<Integer, FantasyPlayerConfig> cfgStore = redisConfigStores.get(match.getId());
+                CacheStore<Integer, Double> blStore = redisBaselineStores.get(match.getId());
+                if (cfgStore != null) cfgStore.putAll(configMap);
+                if (blStore != null) blStore.putAll(baselines);
+            }
         }
     }
 
-    /**
-     * Flush and evict any cached player configs from previous matches
-     * so the DB has up-to-date totalPoints before we snapshot new baselines.
-     */
     private void flushAndEvictStalePlayerConfigs() {
-        for (Map.Entry<Integer, Map<Integer, FantasyPlayerConfig>> entry : playerConfigByMatch.entrySet()) {
-            fantasyPlayerConfigRepository.saveAll(entry.getValue().values());
-            logger.info("Flushed stale player configs for previous matchId={}", entry.getKey());
+        if (strategy == 1) {
+            for (Map.Entry<Integer, Map<Integer, FantasyPlayerConfig>> entry : inMemPlayerConfig.entrySet()) {
+                fantasyPlayerConfigRepository.saveAll(entry.getValue().values());
+                logger.info("Flushed stale player configs for previous matchId={}", entry.getKey());
+            }
+            inMemPlayerConfig.clear();
+            inMemPlayerBaseline.clear();
+        } else {
+            for (Map.Entry<Integer, CacheStore<Integer, FantasyPlayerConfig>> entry : redisConfigStores.entrySet()) {
+                fantasyPlayerConfigRepository.saveAll(entry.getValue().values());
+                logger.info("Flushed stale player configs for previous matchId={}", entry.getKey());
+                entry.getValue().clear();
+            }
+            for (CacheStore<Integer, Double> store : redisBaselineStores.values()) {
+                store.clear();
+            }
+            redisConfigStores.clear();
+            redisBaselineStores.clear();
         }
-        playerConfigByMatch.clear();
-        playerBaselineByMatch.clear();
         playerConfigDirty = false;
     }
 
     private void initPlayerConfigCache(Integer matchId, Integer leagueId) {
-        List<FantasyPlayerConfig> configs = fantasyPlayerConfigRepository.findByLeagueId(leagueId);
-
+        // Scope to match-relevant players only (~22-24). Late-discovered
+        // impact subs are handled by the findByPlayerIdAndLeagueId fallback
+        // inside updatePlayerTotalPointsLive. On the very first tick before
+        // any PlayerPoints exist, this returns an empty cache and all
+        // players will be discovered lazily as the scorecard arrives.
         Map<Integer, Double> alreadyFlushedMatchPoints = new HashMap<>();
+        List<Integer> matchPlayerIds = new ArrayList<>();
         for (PlayerPoints pp : playerPointsRepository.findByMatchId(matchId)) {
             if (pp.getPlayerId() != null) {
                 alreadyFlushedMatchPoints.put(pp.getPlayerId(), pp.getPlayerpoints());
+                matchPlayerIds.add(pp.getPlayerId());
             }
         }
+
+        List<FantasyPlayerConfig> configs = matchPlayerIds.isEmpty()
+                ? List.of()
+                : fantasyPlayerConfigRepository.findByLeagueIdAndPlayerIdIn(leagueId, matchPlayerIds);
 
         Map<Integer, FantasyPlayerConfig> map = new HashMap<>(configs.size());
         Map<Integer, Double> baselines = new HashMap<>(configs.size());
@@ -228,47 +278,79 @@ public class LiveMatchWorkflowService {
             double matchPts = alreadyFlushedMatchPoints.getOrDefault(cfg.getPlayerId(), 0.0);
             baselines.put(cfg.getPlayerId(), dbTotal - matchPts);
         }
-        playerConfigByMatch.put(matchId, map);
-        playerBaselineByMatch.put(matchId, baselines);
+
+        if (strategy == 1) {
+            inMemPlayerConfig.put(matchId, map);
+            inMemPlayerBaseline.put(matchId, baselines);
+        } else {
+            CacheStore<Integer, FantasyPlayerConfig> cfgStore =
+                    cacheStoreFactory.create("playerConfig:" + matchId, Integer.class, FantasyPlayerConfig.class);
+            CacheStore<Integer, Double> blStore =
+                    cacheStoreFactory.create("playerBaseline:" + matchId, Integer.class, Double.class);
+            cfgStore.putAll(map);
+            blStore.putAll(baselines);
+            redisConfigStores.put(matchId, cfgStore);
+            redisBaselineStores.put(matchId, blStore);
+        }
+
         logger.info("Snapshotted player totalPoints baseline for matchId={}, {} players (subtracted {} existing match points)",
                 matchId, configs.size(), alreadyFlushedMatchPoints.size());
     }
 
     private void flushPlayerConfigToDB(Integer matchId) {
-        Map<Integer, FantasyPlayerConfig> configMap = playerConfigByMatch.get(matchId);
-        if (configMap != null && !configMap.isEmpty()) {
-            fantasyPlayerConfigRepository.saveAll(configMap.values());
-            playerConfigDirty = false;
-            logger.info("Flushed player totalPoints for matchId={}, {} players",
-                    matchId, configMap.size());
+        if (strategy == 1) {
+            Map<Integer, FantasyPlayerConfig> configMap = inMemPlayerConfig.get(matchId);
+            if (configMap != null && !configMap.isEmpty()) {
+                fantasyPlayerConfigRepository.saveAll(configMap.values());
+                playerConfigDirty = false;
+                logger.info("Flushed player totalPoints for matchId={}, {} players", matchId, configMap.size());
+            }
+        } else {
+            CacheStore<Integer, FantasyPlayerConfig> store = redisConfigStores.get(matchId);
+            if (store != null && store.size() > 0) {
+                fantasyPlayerConfigRepository.saveAll(store.values());
+                playerConfigDirty = false;
+                logger.info("Flushed player totalPoints for matchId={}, {} players", matchId, store.size());
+            }
         }
     }
 
     private void evictPlayerConfigCache(Integer matchId) {
-        playerConfigByMatch.remove(matchId);
-        playerBaselineByMatch.remove(matchId);
+        if (strategy == 1) {
+            inMemPlayerConfig.remove(matchId);
+            inMemPlayerBaseline.remove(matchId);
+        } else {
+            CacheStore<Integer, FantasyPlayerConfig> cfgStore = redisConfigStores.remove(matchId);
+            CacheStore<Integer, Double> blStore = redisBaselineStores.remove(matchId);
+            if (cfgStore != null) cfgStore.clear();
+            if (blStore != null) blStore.clear();
+        }
     }
 
-    /**
-     * Flushes all dirty in-memory data to the database.
-     * Called by LiveMatchScheduler every 5 minutes (DB write cycle).
-     */
     public void flushCacheToDB() {
-        if (liveMatchUserCache.hasDirtyData()) {
-            liveMatchUserCache.flushToDB();
-        }
-        for (Match match : getLiveMatches()) {
-            if (liveMatchCache.isDirtyPlayerPoints(match.getId())) {
-                List<PlayerPoints> records = liveMatchCache.getPlayerPointsRecords(match.getId());
-                if (records != null && !records.isEmpty()) {
-                    playerPointsPersist.saveAllPlayerPoints(records);
-                    liveMatchCache.clearPlayerPointsDirty(match.getId());
-                    logger.debug("Flushed {} player points records for matchId={}", records.size(), match.getId());
+        // Serialize against the pipeline tick to avoid torn writes: flushing
+        // mid-tick could persist a half-updated cache state. Both are scheduled
+        // tasks on different threads, so we just order them.
+        pipelineFlushLock.lock();
+        try {
+            if (liveMatchUserCache.hasDirtyData()) {
+                liveMatchUserCache.flushToDB();
+            }
+            for (Match match : getLiveMatches()) {
+                if (liveMatchCache.isDirtyPlayerPoints(match.getId())) {
+                    List<PlayerPoints> records = liveMatchCache.getPlayerPointsRecords(match.getId());
+                    if (records != null && !records.isEmpty()) {
+                        playerPointsPersist.saveAllPlayerPoints(records);
+                        liveMatchCache.clearPlayerPointsDirty(match.getId());
+                        logger.debug("Flushed {} player points records for matchId={}", records.size(), match.getId());
+                    }
+                }
+                if (playerConfigDirty) {
+                    flushPlayerConfigToDB(match.getId());
                 }
             }
-            if (playerConfigDirty) {
-                flushPlayerConfigToDB(match.getId());
-            }
+        } finally {
+            pipelineFlushLock.unlock();
         }
     }
 

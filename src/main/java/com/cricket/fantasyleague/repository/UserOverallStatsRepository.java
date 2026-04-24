@@ -19,6 +19,9 @@ public interface UserOverallStatsRepository extends JpaRepository<UserOverallSta
 
     List<UserOverallStats> findAllByUseridIn(List<User> users);
 
+    @Query("SELECT u FROM UserOverallStats u WHERE u.userid.id IN (:userIds)")
+    List<UserOverallStats> findAllByUserIdIn(@Param("userIds") List<Long> userIds);
+
     @Query("SELECT u FROM UserOverallStats u ORDER BY COALESCE(u.totalpoints, 0) DESC")
     Page<UserOverallStats> findAllRanked(Pageable pageable);
 
