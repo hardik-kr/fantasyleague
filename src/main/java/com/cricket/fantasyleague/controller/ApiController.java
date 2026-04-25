@@ -20,6 +20,7 @@ import com.cricket.fantasyleague.payload.response.LeaderboardPageResponse;
 import com.cricket.fantasyleague.payload.response.MatchHistoryResponse;
 import com.cricket.fantasyleague.payload.response.MatchPlayerPointsResponse;
 import com.cricket.fantasyleague.payload.response.MatchResponse;
+import com.cricket.fantasyleague.payload.response.PlayerMatchPointsResponse;
 import com.cricket.fantasyleague.payload.response.PlayerResponse;
 import com.cricket.fantasyleague.payload.response.UserProfileResponse;
 import com.cricket.fantasyleague.payload.response.UserTeamRequest;
@@ -29,6 +30,7 @@ import com.cricket.fantasyleague.service.api.FantasyMatchService;
 import com.cricket.fantasyleague.service.api.FantasyPlayerService;
 import com.cricket.fantasyleague.service.api.LeaderboardService;
 import com.cricket.fantasyleague.service.api.PlayerPointsQueryService;
+import com.cricket.fantasyleague.service.api.PlayerStatsQueryService;
 import com.cricket.fantasyleague.service.api.UserProfileService;
 import com.cricket.fantasyleague.service.api.UserTeamService;
 
@@ -42,6 +44,7 @@ public class ApiController {
     private final UserTeamService userTeamService;
     private final LeaderboardService leaderboardService;
     private final PlayerPointsQueryService playerPointsQueryService;
+    private final PlayerStatsQueryService playerStatsQueryService;
     private final UserRepository userRepository;
 
     public ApiController(FantasyMatchService fantasyMatchService,
@@ -50,6 +53,7 @@ public class ApiController {
                          UserTeamService userTeamService,
                          LeaderboardService leaderboardService,
                          PlayerPointsQueryService playerPointsQueryService,
+                         PlayerStatsQueryService playerStatsQueryService,
                          UserRepository userRepository) {
         this.fantasyMatchService = fantasyMatchService;
         this.fantasyPlayerService = fantasyPlayerService;
@@ -57,6 +61,7 @@ public class ApiController {
         this.userTeamService = userTeamService;
         this.leaderboardService = leaderboardService;
         this.playerPointsQueryService = playerPointsQueryService;
+        this.playerStatsQueryService = playerStatsQueryService;
         this.userRepository = userRepository;
     }
 
@@ -97,6 +102,11 @@ public class ApiController {
     @GetMapping("/points/{matchId}")
     public ResponseEntity<List<MatchPlayerPointsResponse>> getMatchPlayerPoints(@PathVariable Integer matchId) {
         return ResponseEntity.ok(playerPointsQueryService.getMatchPlayerPoints(matchId));
+    }
+
+    @GetMapping("/players/{playerId}/points")
+    public ResponseEntity<List<PlayerMatchPointsResponse>> getPlayerPointsHistory(@PathVariable Integer playerId) {
+        return ResponseEntity.ok(playerStatsQueryService.getPointsHistory(playerId));
     }
 
     @PostMapping("/team")

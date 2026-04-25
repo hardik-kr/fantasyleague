@@ -13,4 +13,7 @@ public interface PlayerPointsRepository extends JpaRepository<PlayerPoints, Long
 {
     @QueryHints(@QueryHint(name = "org.hibernate.readOnly", value = "true"))
     List<PlayerPoints> findByMatchId(Integer matchId);
+
+    @QueryHints(@QueryHint(name = "org.hibernate.readOnly", value = "true"))
+    List<PlayerPoints> findByPlayerId(Integer playerId);
 }

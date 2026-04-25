@@ -11,6 +11,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 import com.cricket.fantasyleague.payload.ApiResponse;
 
@@ -87,9 +88,29 @@ public class GlobalExceptionHandler
         return new ResponseEntity<>(resp, HttpStatus.TOO_MANY_REQUESTS);
     }
 
+    /**
+     * Client disconnected before the response could be flushed (browser closed tab,
+     * Postman/IDE timeout, debugger paused too long, mobile network drop). Backend
+     * work has already completed successfully — there is no usable socket to write
+     * to. Logging at INFO so it doesn't pollute error metrics / dashboards.
+     * Returning null skips response writing (the response is already gone).
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public ResponseEntity<Void> clientDisconnected(AsyncRequestNotUsableException ex)
+    {
+        logger.info("Client disconnected before response could be sent: {}", ex.getMessage());
+        return null;
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse> catchAll(Exception ex)
     {
+        // Tomcat's ClientAbortException is also a benign client-disconnect — match by class
+        // name to avoid a hard dependency on the tomcat-embed-core package.
+        if ("ClientAbortException".equals(ex.getClass().getSimpleName())) {
+            logger.info("Client aborted connection: {}", ex.getMessage());
+            return null;
+        }
         logger.error("Unhandled exception: {}", ex.getMessage(), ex);
         String msg = ex.getClass().getSimpleName() + ": " + ex.getMessage();
         ApiResponse resp = new ApiResponse(msg, false,

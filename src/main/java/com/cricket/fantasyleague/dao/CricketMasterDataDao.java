@@ -108,6 +108,12 @@ public class CricketMasterDataDao {
         return jdbc.query(sql, new MapSqlParameterSource(), MATCH_MAPPER);
     }
 
+    public List<MatchData> findMatchesByIds(List<Integer> ids) {
+        if (ids == null || ids.isEmpty()) return List.of();
+        String sql = "SELECT " + MATCH_COLS + " FROM matches m WHERE m.id IN (:ids)";
+        return jdbc.query(sql, new MapSqlParameterSource("ids", ids), MATCH_MAPPER);
+    }
+
     // ── Player queries (via player_team join) ──
 
     private static final String PLAYER_COLS =
