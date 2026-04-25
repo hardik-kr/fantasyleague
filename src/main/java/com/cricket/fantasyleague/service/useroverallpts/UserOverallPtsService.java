@@ -1,14 +1,14 @@
 package com.cricket.fantasyleague.service.useroverallpts;
 
-import java.util.Map;
-
 import com.cricket.fantasyleague.entity.table.Match;
 
 public interface UserOverallPtsService {
 
     /**
-     * Updates overall points for all users using the pre-computed match points map,
-     * avoiding a redundant DB re-read of UserMatchStats.
+     * Updates overall points for every active user by summing their committed
+     * non-live total with the current live-match points snapshot read directly
+     * from the cache. Matches are streamed in bounded chunks so peak heap
+     * footprint is O(chunk), independent of total user count.
      */
-    void calcUserOverallPointsData(Match match, Map<Long, Double> matchPointsByUserId);
+    void calcUserOverallPointsData(Match match);
 }

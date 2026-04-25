@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 import org.hibernate.Hibernate;
 import org.slf4j.Logger;
@@ -282,6 +283,149 @@ public class LiveMatchUserCache {
             return Collections.unmodifiableSet(new HashSet<>(inMemMatchStats.keySet()));
         }
         return Collections.unmodifiableSet(new HashSet<>(redisMatchStores.keySet()));
+    }
+
+    // ────────────────────── streaming hot-path API (DTO-only) ──────────────────────
+
+    /**
+     * Streams match stats for a match in bounded chunks (DTOs only, no entity
+     * rehydration). Used by the live-match pipeline to process 100K+ users
+     * with O(chunkSize) heap footprint.
+     *
+     * <p>The handler's {@code List<CachedUserMatchStats>} is an immutable
+     * snapshot of the current chunk; it must not be retained beyond the callback.
+     */
+    public void forEachMatchStatsChunk(Integer matchId, int chunkSize,
+                                       Consumer<List<CachedUserMatchStats>> handler) {
+        if (strategy == 1) {
+            List<UserMatchStats> all = inMemMatchStats.get(matchId);
+            if (all == null || all.isEmpty()) return;
+            List<CachedUserMatchStats> chunk = new ArrayList<>(chunkSize);
+            for (UserMatchStats s : all) {
+                chunk.add(CachedUserMatchStats.from(s));
+                if (chunk.size() >= chunkSize) {
+                    handler.accept(chunk);
+                    chunk = new ArrayList<>(chunkSize);
+                }
+            }
+            if (!chunk.isEmpty()) handler.accept(chunk);
+            return;
+        }
+        CacheStore<Long, CachedUserMatchStats> store = redisMatchStores.get(matchId);
+        if (store == null) return;
+        store.forEachChunk(chunkSize, (keys, values) ->
+                handler.accept(new ArrayList<>(values)));
+    }
+
+    /**
+     * Writes a chunk of updated match stats back to the cache.
+     * For strategy=1, merges updates back into the in-memory list by id.
+     * For strategy=2, issues a single HMSET for the chunk.
+     */
+    public void saveMatchStatsChunk(Integer matchId, List<CachedUserMatchStats> updated) {
+        if (updated == null || updated.isEmpty()) return;
+        if (strategy == 1) {
+            List<UserMatchStats> all = inMemMatchStats.get(matchId);
+            if (all == null) return;
+            Map<Long, Double> mpById = new HashMap<>(updated.size());
+            for (CachedUserMatchStats dto : updated) {
+                mpById.put(dto.id(), dto.matchpoints());
+            }
+            for (UserMatchStats s : all) {
+                Double mp = mpById.get(s.getId());
+                if (mp != null) s.setMatchpoints(mp);
+            }
+            return;
+        }
+        CacheStore<Long, CachedUserMatchStats> store = redisMatchStores.get(matchId);
+        if (store == null) return;
+        Map<Long, CachedUserMatchStats> batch = new HashMap<>(updated.size());
+        for (CachedUserMatchStats dto : updated) {
+            if (dto.userId() != null) batch.put(dto.userId(), dto);
+        }
+        store.putAll(batch);
+    }
+
+    /**
+     * Streams overall stats across all currently-active users in bounded
+     * chunks (DTOs only). Handler receives a fresh map of at most
+     * {@code chunkSize} entries per invocation.
+     */
+    public void forEachOverallStatsChunk(int chunkSize,
+                                         Consumer<Map<Long, CachedUserOverallStats>> handler) {
+        if (strategy == 1) {
+            Map<Long, CachedUserOverallStats> chunk = new HashMap<>(chunkSize);
+            for (Map.Entry<Long, UserOverallStats> e : inMemOverallStats.entrySet()) {
+                chunk.put(e.getKey(), CachedUserOverallStats.from(e.getValue()));
+                if (chunk.size() >= chunkSize) {
+                    handler.accept(chunk);
+                    chunk = new HashMap<>(chunkSize);
+                }
+            }
+            if (!chunk.isEmpty()) handler.accept(chunk);
+            return;
+        }
+        if (redisOverallStore == null) return;
+        redisOverallStore.forEachChunk(chunkSize, (keys, values) -> {
+            Map<Long, CachedUserOverallStats> chunk = new HashMap<>(keys.size());
+            for (int i = 0; i < keys.size(); i++) {
+                chunk.put(keys.get(i), values.get(i));
+            }
+            handler.accept(chunk);
+        });
+    }
+
+    /**
+     * Writes a chunk of updated overall stats back to the cache.
+     */
+    public void saveOverallStatsChunk(Map<Long, CachedUserOverallStats> updated) {
+        if (updated == null || updated.isEmpty()) return;
+        if (strategy == 1) {
+            for (Map.Entry<Long, CachedUserOverallStats> e : updated.entrySet()) {
+                UserOverallStats existing = inMemOverallStats.get(e.getKey());
+                if (existing != null) {
+                    CachedUserOverallStats dto = e.getValue();
+                    if (dto.totalpoints() != null) existing.setTotalpoints(dto.totalpoints());
+                    if (dto.boosterleft() != null) existing.setBoosterleft(dto.boosterleft());
+                    if (dto.transferleft() != null) existing.setTransferleft(dto.transferleft());
+                    if (dto.usedBoosters() != null) existing.setUsedBoosters(dto.usedBoosters());
+                }
+            }
+            return;
+        }
+        if (redisOverallStore == null) return;
+        redisOverallStore.putAll(updated);
+    }
+
+    /**
+     * Builds a single {@code userId -> SUM(matchpoints across all currently
+     * live matches)} map. Replaces O(users x matches) per-user HGETs with
+     * O(matches) HGETALLs. Size is bounded by the number of currently-active
+     * users (~5 MB at 100K) and is short-lived (discarded at end of tick).
+     */
+    public Map<Long, Double> snapshotLiveMatchpointsByUser() {
+        Map<Long, Double> result = new HashMap<>();
+        if (strategy == 1) {
+            for (List<UserMatchStats> list : inMemMatchStats.values()) {
+                for (UserMatchStats s : list) {
+                    if (s.getUserid() == null || s.getMatchpoints() == null) continue;
+                    Long userId = s.getUserid().getId();
+                    result.merge(userId, s.getMatchpoints(), Double::sum);
+                }
+            }
+            return result;
+        }
+        // Strategy 2: one HSCAN-style streaming per live match, aggregate sums.
+        for (CacheStore<Long, CachedUserMatchStats> store : redisMatchStores.values()) {
+            store.forEachChunk(1000, (keys, values) -> {
+                for (int i = 0; i < keys.size(); i++) {
+                    CachedUserMatchStats dto = values.get(i);
+                    if (dto == null || dto.matchpoints() == null) continue;
+                    result.merge(keys.get(i), dto.matchpoints(), Double::sum);
+                }
+            });
+        }
+        return result;
     }
 
     // ────────────────────── write-back (Redis only) ──────────────────────

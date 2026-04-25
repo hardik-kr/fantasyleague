@@ -177,13 +177,14 @@ public class TestController {
             return ResponseEntity.badRequest().body(Map.of("error", "Match not found: " + matchId));
         }
         Map<Integer, Double> playerPointsMap = playerPointsService.calculatePlayerPoints(match);
-        Map<Long, Double> userPoints = userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap);
+        userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap);
+        int userCount = liveMatchUserCache.getAllMatchStatCounts().getOrDefault(matchId, 0);
         long elapsed = System.currentTimeMillis() - start;
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("matchId", matchId);
-        result.put("userCount", userPoints.size());
-        result.put("userMatchPoints", userPoints);
+        result.put("userCount", userCount);
+        result.put("status", "match points streamed to cache");
         result.put("elapsedMs", elapsed);
         return ResponseEntity.ok(result);
     }
@@ -198,8 +199,8 @@ public class TestController {
             return ResponseEntity.badRequest().body(Map.of("error", "Match not found: " + matchId));
         }
         Map<Integer, Double> playerPointsMap = playerPointsService.calculatePlayerPoints(match);
-        Map<Long, Double> userPoints = userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap);
-        userOverallPtsService.calcUserOverallPointsData(match, userPoints);
+        userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap);
+        userOverallPtsService.calcUserOverallPointsData(match);
         long elapsed = System.currentTimeMillis() - start;
 
         Map<String, Object> result = new LinkedHashMap<>();

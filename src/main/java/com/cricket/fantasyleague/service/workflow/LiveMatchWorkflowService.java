@@ -125,8 +125,8 @@ public class LiveMatchWorkflowService {
             Map<Integer, Double> playerPointsMap = playerPointsService.calculatePlayerPoints(match);
 
             CompletableFuture<Void> pipeline = CompletableFuture
-                    .supplyAsync(() -> userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap), taskExecutor)
-                    .thenAcceptAsync(matchPointsByUser -> userOverallPtsService.calcUserOverallPointsData(match, matchPointsByUser), taskExecutor);
+                    .runAsync(() -> userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap), taskExecutor)
+                    .thenRunAsync(() -> userOverallPtsService.calcUserOverallPointsData(match), taskExecutor);
 
             pipeline.join();
 

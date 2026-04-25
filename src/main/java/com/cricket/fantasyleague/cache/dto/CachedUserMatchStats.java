@@ -46,6 +46,18 @@ public record CachedUserMatchStats(
     }
 
     /**
+     * Returns a copy of this record with a new {@code matchpoints} value.
+     * Used in the streaming hot-loop to avoid mutating shared DTOs and to
+     * keep allocation per user bounded to a single record object.
+     */
+    public CachedUserMatchStats withMatchpoints(Double mp) {
+        return new CachedUserMatchStats(
+                id, userId, userEmail, matchId, boosterOrdinal, transferused,
+                mp,
+                captainId, vicecaptainId, tripleBoosterId, playing11Ids);
+    }
+
+    /**
      * Reconstructs a detached UserMatchStats with stub relationship objects
      * that carry only their IDs — sufficient for the hot-loop calculation
      * (captain/vice-captain comparison, playing11 iteration, etc.).

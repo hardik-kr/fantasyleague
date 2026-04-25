@@ -1,13 +1,18 @@
 package com.cricket.fantasyleague.cache.store;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 public class RedisCacheStore<K, V> implements CacheStore<K, V> {
@@ -91,6 +96,31 @@ public class RedisCacheStore<K, V> implements CacheStore<K, V> {
     public int size() {
         Long s = hashOps.size(hashKey);
         return s != null ? s.intValue() : 0;
+    }
+
+    @Override
+    public void forEachChunk(int chunkSize, BiConsumer<List<K>, List<V>> handler) {
+        if (chunkSize <= 0) {
+            throw new IllegalArgumentException("chunkSize must be positive: " + chunkSize);
+        }
+        ScanOptions opts = ScanOptions.scanOptions().count(chunkSize).build();
+        List<K> keys = new ArrayList<>(chunkSize);
+        List<V> values = new ArrayList<>(chunkSize);
+        try (Cursor<Map.Entry<String, String>> cursor = hashOps.scan(hashKey, opts)) {
+            while (cursor.hasNext()) {
+                Map.Entry<String, String> e = cursor.next();
+                keys.add(parseKey(e.getKey()));
+                values.add(deserialize(e.getValue()));
+                if (keys.size() >= chunkSize) {
+                    handler.accept(keys, values);
+                    keys.clear();
+                    values.clear();
+                }
+            }
+            if (!keys.isEmpty()) {
+                handler.accept(keys, values);
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")

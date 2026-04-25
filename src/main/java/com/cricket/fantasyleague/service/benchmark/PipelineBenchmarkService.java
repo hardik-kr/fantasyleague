@@ -199,7 +199,7 @@ public class PipelineBenchmarkService {
         List<Player> players = loadPlayersForMatch(match);
         Map<Integer, Double> fakePlayerPoints = buildFakePlayerPoints(players);
 
-        int userCount = liveMatchUserCache.getUserMatchStats(matchId).size();
+        Integer userCount = liveMatchUserCache.getAllMatchStatCounts().getOrDefault(matchId, 0);
         List<Long> calcTimes = new ArrayList<>(iterations);
         List<Long> overallTimes = new ArrayList<>(iterations);
         List<Long> totalTimes = new ArrayList<>(iterations);
@@ -211,9 +211,9 @@ public class PipelineBenchmarkService {
             randomizePlayerPoints(fakePlayerPoints, new Random(i));
 
             long t0 = System.nanoTime();
-            Map<Long, Double> matchPts = userMatchStatsService.calcMatchUserPointsData(match, fakePlayerPoints);
+            userMatchStatsService.calcMatchUserPointsData(match, fakePlayerPoints);
             long t1 = System.nanoTime();
-            userOverallPtsService.calcUserOverallPointsData(match, matchPts);
+            userOverallPtsService.calcUserOverallPointsData(match);
             long t2 = System.nanoTime();
 
             calcTimes.add((t1 - t0) / 1_000_000);

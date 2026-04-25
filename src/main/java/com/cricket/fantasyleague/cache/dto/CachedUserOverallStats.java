@@ -30,6 +30,16 @@ public record CachedUserOverallStats(
     }
 
     /**
+     * Returns a copy of this record with a new {@code totalpoints} value.
+     * Used in the streaming hot-loop to avoid creating full JPA entities
+     * when only the totalpoints field changes per tick.
+     */
+    public CachedUserOverallStats withTotalpoints(Double tp) {
+        return new CachedUserOverallStats(
+                id, userId, tp, prevpoints, boosterleft, transferleft, usedBoosters);
+    }
+
+    /**
      * Reconstructs a detached UserOverallStats with a stub User
      * carrying only its ID — sufficient for the hot-loop calculation.
      */
