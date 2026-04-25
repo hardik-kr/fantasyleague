@@ -5,13 +5,17 @@ import static com.cricket.fantasyleague.util.MatchTimeUtils.toIST;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +50,13 @@ import com.cricket.fantasyleague.service.usertransfer.UserTransferService;
  *
  * Job2 + Job3 execute off the main scheduler thread via CompletableFuture.
  * DB writes happen only via periodic flushToDB() calls, not on every ball.
+ *
+ * <p><b>Cache scoping invariant:</b> player-config caches are <i>strictly
+ * per-match</i>. The pipeline of one match never touches the cache of another.
+ * Each match's baseline is computed exactly once on first cycle and reused
+ * for the lifetime of that match (until {@link #finalFlushAndEvict}). This
+ * prevents cross-match cache thrashing that would otherwise corrupt totals
+ * for players active during overlapping match windows.
  */
 @Service
 public class LiveMatchWorkflowService {
@@ -69,14 +80,20 @@ public class LiveMatchWorkflowService {
     private int strategy;
 
     // ── Strategy 1: in-memory ConcurrentHashMaps (current behavior) ──
+    // Map<MatchId, Map<PlayerId, FantasyPlayerConfig>> — strictly match-scoped.
     private final ConcurrentHashMap<Integer, Map<Integer, FantasyPlayerConfig>> inMemPlayerConfig = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, Map<Integer, Double>> inMemPlayerBaseline = new ConcurrentHashMap<>();
 
     // ── Strategy 2: Redis-backed CacheStores ──
+    // Already keyed Map<MatchId, CacheStore<PlayerId, …>> — same isolation guarantee.
     private final ConcurrentHashMap<Integer, CacheStore<Integer, FantasyPlayerConfig>> redisConfigStores = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, CacheStore<Integer, Double>> redisBaselineStores = new ConcurrentHashMap<>();
 
-    private volatile boolean playerConfigDirty = false;
+    // Per-match dirty tracking. A match enters this set when a tick mutates
+    // its in-cache totalPoints; it exits when those mutations are flushed to
+    // DB. Replaces the previous global volatile boolean which dropped writes
+    // when 2+ matches were live simultaneously.
+    private final Set<Integer> dirtyConfigMatches = ConcurrentHashMap.newKeySet();
 
     /**
      * Serializes the pipeline tick (in-memory mutations) with the periodic flush
@@ -164,13 +181,23 @@ public class LiveMatchWorkflowService {
         logger.info("matchId={} complete — final flush done, cache evicted", match.getId());
     }
 
+    /**
+     * Lazily initialises the player-config cache for {@code match} on its
+     * first pipeline tick. Subsequent ticks reuse the cache untouched: the
+     * baseline computed here is the only baseline ever used for this match,
+     * which guarantees idempotency across ticks (each tick simply rewrites
+     * {@code totalPoints = baseline + currentMatchPoints}).
+     *
+     * <p>Crucially this method <b>never touches another match's cache</b>.
+     * A previously-live match retains its cache until its own
+     * {@link #finalFlushAndEvict} runs (or the defensive sweep in
+     * {@link #flushCacheToDB} catches a missed completion).
+     */
     private void ensurePlayerConfigInitialized(Match match) {
         Integer leagueId = match.getLeagueId();
         if (leagueId == null) return;
-        if (!hasPlayerConfig(match.getId())) {
-            flushAndEvictStalePlayerConfigs();
-            initPlayerConfigCache(match.getId(), leagueId);
-        }
+        if (hasPlayerConfig(match.getId())) return;
+        initPlayerConfigCache(match.getId(), leagueId);
     }
 
     private boolean hasPlayerConfig(Integer matchId) {
@@ -200,17 +227,41 @@ public class LiveMatchWorkflowService {
 
         if (configMap == null || baselines == null) return;
 
+        // Batch-resolve any playerIds not yet cached. This handles the very
+        // first cycle of a match (cache is empty because no PlayerPoints
+        // existed in DB at init time) AND true mid-match impact subs in a
+        // single DB call instead of N+1 round-trips.
+        List<Integer> missing = new ArrayList<>();
+        for (Integer playerId : playerPointsMap.keySet()) {
+            if (!configMap.containsKey(playerId)) missing.add(playerId);
+        }
+
+        if (!missing.isEmpty()) {
+            boolean isFirstCyclePreload = configMap.isEmpty();
+            List<FantasyPlayerConfig> fetched =
+                    fantasyPlayerConfigRepository.findByLeagueIdAndPlayerIdIn(leagueId, missing);
+
+            for (FantasyPlayerConfig cfg : fetched) {
+                Integer pid = cfg.getPlayerId();
+                if (pid == null) continue;
+                configMap.put(pid, cfg);
+                baselines.put(pid, cfg.getTotalPoints() != null ? cfg.getTotalPoints() : 0.0);
+            }
+
+            if (isFirstCyclePreload) {
+                logger.info("matchId={} first cycle: pre-loaded {} playing-XI player configs",
+                        match.getId(), fetched.size());
+            } else {
+                logger.info("matchId={} late-discovered {} player config(s) (impact sub / concussion sub)",
+                        match.getId(), fetched.size());
+            }
+        }
+
         int updated = 0;
         for (Map.Entry<Integer, Double> entry : playerPointsMap.entrySet()) {
             Integer playerId = entry.getKey();
             FantasyPlayerConfig cfg = configMap.get(playerId);
-            if (cfg == null) {
-                cfg = fantasyPlayerConfigRepository.findByPlayerIdAndLeagueId(playerId, leagueId).orElse(null);
-                if (cfg == null) continue;
-                configMap.put(playerId, cfg);
-                baselines.put(playerId, cfg.getTotalPoints() != null ? cfg.getTotalPoints() : 0.0);
-                logger.info("Late-discovered config for playerId={} (impact sub), baseline={}", playerId, baselines.get(playerId));
-            }
+            if (cfg == null) continue; // unresolved — config row missing entirely
 
             double baseline = baselines.getOrDefault(playerId, 0.0);
             cfg.setTotalPoints(baseline + entry.getValue());
@@ -218,7 +269,7 @@ public class LiveMatchWorkflowService {
         }
 
         if (updated > 0) {
-            playerConfigDirty = true;
+            dirtyConfigMatches.add(match.getId());
             if (strategy == 2) {
                 CacheStore<Integer, FantasyPlayerConfig> cfgStore = redisConfigStores.get(match.getId());
                 CacheStore<Integer, Double> blStore = redisBaselineStores.get(match.getId());
@@ -228,35 +279,20 @@ public class LiveMatchWorkflowService {
         }
     }
 
-    private void flushAndEvictStalePlayerConfigs() {
-        if (strategy == 1) {
-            for (Map.Entry<Integer, Map<Integer, FantasyPlayerConfig>> entry : inMemPlayerConfig.entrySet()) {
-                fantasyPlayerConfigRepository.saveAll(entry.getValue().values());
-                logger.info("Flushed stale player configs for previous matchId={}", entry.getKey());
-            }
-            inMemPlayerConfig.clear();
-            inMemPlayerBaseline.clear();
-        } else {
-            for (Map.Entry<Integer, CacheStore<Integer, FantasyPlayerConfig>> entry : redisConfigStores.entrySet()) {
-                fantasyPlayerConfigRepository.saveAll(entry.getValue().values());
-                logger.info("Flushed stale player configs for previous matchId={}", entry.getKey());
-                entry.getValue().clear();
-            }
-            for (CacheStore<Integer, Double> store : redisBaselineStores.values()) {
-                store.clear();
-            }
-            redisConfigStores.clear();
-            redisBaselineStores.clear();
-        }
-        playerConfigDirty = false;
-    }
-
     private void initPlayerConfigCache(Integer matchId, Integer leagueId) {
-        // Scope to match-relevant players only (~22-24). Late-discovered
-        // impact subs are handled by the findByPlayerIdAndLeagueId fallback
-        // inside updatePlayerTotalPointsLive. On the very first tick before
-        // any PlayerPoints exist, this returns an empty cache and all
-        // players will be discovered lazily as the scorecard arrives.
+        // Read what's already been persisted to DB.PlayerPoints for this match.
+        // This is the value that has already been folded into cfg.totalPoints
+        // by a prior flushPlayerConfigToDB or finalFlushAndEvict — i.e. the
+        // amount we must subtract from the current cfg.totalPoints to recover
+        // the pre-match baseline.
+        //
+        // On the very first cycle of a fresh match, this returns empty and
+        // baseline = cfg.totalPoints (full DB value).
+        //
+        // On a restart-during-match, both cfg.totalPoints and PlayerPoints
+        // were last written by the same flushCacheToDB call (so they are
+        // mutually consistent), and ApplicationReadyEvent's integrity check
+        // (syncTotalPointsFromPlayerPoints) further guarantees this on boot.
         Map<Integer, Double> alreadyFlushedMatchPoints = new HashMap<>();
         List<Integer> matchPlayerIds = new ArrayList<>();
         for (PlayerPoints pp : playerPointsRepository.findByMatchId(matchId)) {
@@ -267,7 +303,7 @@ public class LiveMatchWorkflowService {
         }
 
         List<FantasyPlayerConfig> configs = matchPlayerIds.isEmpty()
-                ? List.of()
+                ? Collections.emptyList()
                 : fantasyPlayerConfigRepository.findByLeagueIdAndPlayerIdIn(leagueId, matchPlayerIds);
 
         Map<Integer, FantasyPlayerConfig> map = new HashMap<>(configs.size());
@@ -293,7 +329,7 @@ public class LiveMatchWorkflowService {
             redisBaselineStores.put(matchId, blStore);
         }
 
-        logger.info("Snapshotted player totalPoints baseline for matchId={}, {} players (subtracted {} existing match points)",
+        logger.info("Initialized player-config cache for matchId={}: {} pre-existing player(s) (subtracted {} prior-flush match points)",
                 matchId, configs.size(), alreadyFlushedMatchPoints.size());
     }
 
@@ -302,14 +338,14 @@ public class LiveMatchWorkflowService {
             Map<Integer, FantasyPlayerConfig> configMap = inMemPlayerConfig.get(matchId);
             if (configMap != null && !configMap.isEmpty()) {
                 fantasyPlayerConfigRepository.saveAll(configMap.values());
-                playerConfigDirty = false;
+                dirtyConfigMatches.remove(matchId);
                 logger.info("Flushed player totalPoints for matchId={}, {} players", matchId, configMap.size());
             }
         } else {
             CacheStore<Integer, FantasyPlayerConfig> store = redisConfigStores.get(matchId);
             if (store != null && store.size() > 0) {
                 fantasyPlayerConfigRepository.saveAll(store.values());
-                playerConfigDirty = false;
+                dirtyConfigMatches.remove(matchId);
                 logger.info("Flushed player totalPoints for matchId={}, {} players", matchId, store.size());
             }
         }
@@ -325,6 +361,35 @@ public class LiveMatchWorkflowService {
             if (cfgStore != null) cfgStore.clear();
             if (blStore != null) blStore.clear();
         }
+        dirtyConfigMatches.remove(matchId);
+    }
+
+    /**
+     * Defensive cleanup for player-config caches that outlived their match —
+     * e.g. if {@link #finalFlushAndEvict} was missed because the match
+     * transitioned to COMPLETE outside the pipeline window. Without this,
+     * a stale entry would otherwise live forever in {@code inMemPlayerConfig}
+     * and slowly leak heap.
+     *
+     * <p>Runs under the pipelineFlushLock from {@link #flushCacheToDB} so it
+     * cannot race with an in-flight tick.
+     */
+    private void evictNonLivePlayerConfigCaches(Set<Integer> liveMatchIds) {
+        Set<Integer> cachedMatchIds = strategy == 1
+                ? new HashSet<>(inMemPlayerConfig.keySet())
+                : new HashSet<>(redisConfigStores.keySet());
+
+        for (Integer cachedMatchId : cachedMatchIds) {
+            if (liveMatchIds.contains(cachedMatchId)) continue;
+            // Match is no longer live but its cache is still around: flush
+            // pending mutations first (so they don't get lost), then evict.
+            logger.warn("Defensive sweep: evicting orphaned player-config cache for matchId={} (no longer live)",
+                    cachedMatchId);
+            if (dirtyConfigMatches.contains(cachedMatchId)) {
+                flushPlayerConfigToDB(cachedMatchId);
+            }
+            evictPlayerConfigCache(cachedMatchId);
+        }
     }
 
     public void flushCacheToDB() {
@@ -336,7 +401,13 @@ public class LiveMatchWorkflowService {
             if (liveMatchUserCache.hasDirtyData()) {
                 liveMatchUserCache.flushToDB();
             }
-            for (Match match : getLiveMatches()) {
+
+            List<Match> liveMatches = getLiveMatches();
+            Set<Integer> liveMatchIds = liveMatches.stream()
+                    .map(Match::getId)
+                    .collect(Collectors.toCollection(HashSet::new));
+
+            for (Match match : liveMatches) {
                 if (liveMatchCache.isDirtyPlayerPoints(match.getId())) {
                     List<PlayerPoints> records = liveMatchCache.getPlayerPointsRecords(match.getId());
                     if (records != null && !records.isEmpty()) {
@@ -345,10 +416,14 @@ public class LiveMatchWorkflowService {
                         logger.debug("Flushed {} player points records for matchId={}", records.size(), match.getId());
                     }
                 }
-                if (playerConfigDirty) {
+                if (dirtyConfigMatches.contains(match.getId())) {
                     flushPlayerConfigToDB(match.getId());
                 }
             }
+
+            // Safety net: clean up any cached matches that are no longer live
+            // (e.g. completion path missed eviction).
+            evictNonLivePlayerConfigCaches(liveMatchIds);
         } finally {
             pipelineFlushLock.unlock();
         }
