@@ -2,6 +2,7 @@ package com.cricket.fantasyleague.config ;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.restclient.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -35,9 +36,10 @@ public class AppConfig
 
     @Bean
     RestTemplate restTemplate(
+            RestTemplateBuilder builder,
             @Value("${cricketapi.base-url:http://localhost:9090}") String cricketApiBaseUrl,
             @Value("${cricketapi.universal-auth.token:}") String cricketUniversalAuthToken) {
-        RestTemplate rt = new RestTemplate();
+        RestTemplate rt = builder.build();
         if (StringUtils.hasText(cricketUniversalAuthToken)) {
             rt.getInterceptors().add(
                     new CricketServiceBearerRequestInterceptor(cricketApiBaseUrl, cricketUniversalAuthToken));
