@@ -25,9 +25,9 @@ import com.cricket.fantasyleague.cache.LiveMatchCache;
 import com.cricket.fantasyleague.entity.enums.MatchState;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.repository.FantasyPlayerConfigRepository;
-import com.cricket.fantasyleague.repository.UserMatchStatsDraftRespository;
-import com.cricket.fantasyleague.repository.UserMatchStatsRespository;
-import com.cricket.fantasyleague.repository.UserOverallStatsRepository;
+import com.cricket.fantasyleague.repository.season.UserMatchStatsDraftRespository;
+import com.cricket.fantasyleague.repository.season.UserMatchStatsRespository;
+import com.cricket.fantasyleague.repository.season.UserOverallStatsRepository;
 import com.cricket.fantasyleague.service.match.MatchService;
 import com.cricket.fantasyleague.service.workflow.LiveMatchWorkflowService;
 

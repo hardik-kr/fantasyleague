@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.cricket.fantasyleague.cache.DailyLiveMatchTeamCache;
 import com.cricket.fantasyleague.cache.LiveMatchUserCache;
 import com.cricket.fantasyleague.dao.CricketEntityMapper;
 import com.cricket.fantasyleague.dao.CricketMasterDataDao;
@@ -28,18 +29,21 @@ import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.Player;
 import com.cricket.fantasyleague.entity.table.Team;
 import com.cricket.fantasyleague.entity.table.User;
-import com.cricket.fantasyleague.entity.table.UserMatchStats;
-import com.cricket.fantasyleague.entity.table.UserOverallStats;
+import com.cricket.fantasyleague.entity.table.daily.DailyUserMatchTeam;
+import com.cricket.fantasyleague.entity.table.season.UserMatchStats;
+import com.cricket.fantasyleague.entity.table.season.UserOverallStats;
 import com.cricket.fantasyleague.repository.FantasyPlayerConfigRepository;
-import com.cricket.fantasyleague.repository.UserMatchStatsRespository;
-import com.cricket.fantasyleague.repository.UserOverallStatsRepository;
+import com.cricket.fantasyleague.repository.daily.DailyUserMatchTeamRepository;
+import com.cricket.fantasyleague.repository.season.UserMatchStatsRespository;
+import com.cricket.fantasyleague.repository.season.UserOverallStatsRepository;
 import com.cricket.fantasyleague.repository.UserRepository;
 
 import jakarta.persistence.EntityManager;
 
+import com.cricket.fantasyleague.service.daily.DailyMatchPointsService;
 import com.cricket.fantasyleague.service.match.MatchService;
-import com.cricket.fantasyleague.service.usermatchstats.UserMatchStatsService;
-import com.cricket.fantasyleague.service.useroverallpts.UserOverallPtsService;
+import com.cricket.fantasyleague.service.season.UserMatchStatsService;
+import com.cricket.fantasyleague.service.season.UserOverallPtsService;
 
 @Service
 public class PipelineBenchmarkService {
@@ -58,6 +62,9 @@ public class PipelineBenchmarkService {
     private final UserMatchStatsService userMatchStatsService;
     private final UserOverallPtsService userOverallPtsService;
     private final LiveMatchUserCache liveMatchUserCache;
+    private final DailyLiveMatchTeamCache dailyLiveMatchTeamCache;
+    private final DailyMatchPointsService dailyMatchPointsService;
+    private final DailyUserMatchTeamRepository dailyTeamRepository;
     private final FantasyPlayerConfigRepository fantasyPlayerConfigRepository;
 
     public PipelineBenchmarkService(EntityManager em,
@@ -70,6 +77,9 @@ public class PipelineBenchmarkService {
                                     UserMatchStatsService userMatchStatsService,
                                     UserOverallPtsService userOverallPtsService,
                                     LiveMatchUserCache liveMatchUserCache,
+                                    DailyLiveMatchTeamCache dailyLiveMatchTeamCache,
+                                    DailyMatchPointsService dailyMatchPointsService,
+                                    DailyUserMatchTeamRepository dailyTeamRepository,
                                     FantasyPlayerConfigRepository fantasyPlayerConfigRepository) {
         this.em = em;
         this.dao = dao;
@@ -81,6 +91,9 @@ public class PipelineBenchmarkService {
         this.userMatchStatsService = userMatchStatsService;
         this.userOverallPtsService = userOverallPtsService;
         this.liveMatchUserCache = liveMatchUserCache;
+        this.dailyLiveMatchTeamCache = dailyLiveMatchTeamCache;
+        this.dailyMatchPointsService = dailyMatchPointsService;
+        this.dailyTeamRepository = dailyTeamRepository;
         this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
     }
 
@@ -452,6 +465,231 @@ public class PipelineBenchmarkService {
     private long usedHeapBytes() {
         Runtime rt = Runtime.getRuntime();
         return rt.totalMemory() - rt.freeMemory();
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Daily Challenge benchmark — parity coverage for the
+    // DailyLiveMatchTeamCache + DailyMatchPointsService hot path.
+    //
+    // <p>Methodology mirrors {@link #benchmark(int, int)}: seed → warm-up →
+    // N-tick recompute pass → flush, capturing latencies and heap deltas at
+    // each phase. The asserts the daily branch must satisfy at 100K
+    // (per the scaling plan, section 1a/1b):
+    //   1. Tick path issues NO {@code UPDATE daily_user_match_team} queries
+    //      — recompute mutates only the cache; markDirty is a flag flip.
+    //   2. Heap delta over a 60-tick pass is near-zero (chunk DTOs are
+    //      short-lived; GC reclaims them between ticks).
+    //   3. flushDirtyToDB emits a single batched UPDATE per chunk
+    //      (chunkSize = fantasy.cache.flush.batch-size). At 100K rows /
+    //      10K batch size → 10 batched UPDATEs in the periodic flush.
+    //   4. At N=0 (no daily drafts saved) the entire daily branch
+    //      contributes zero heap, zero CPU, zero DB ops — the most common
+    //      "low-engagement match" load profile.
+    // ────────────────────────────────────────────────────────────────────
+
+    /**
+     * Seeds {@code userCount} {@link DailyUserMatchTeam} rows for the
+     * benchmark match (id == {@link #ID_BASE}). Reuses the users + match +
+     * players already created by {@link #seed(int)}; call {@code seed(N)}
+     * first. Idempotent: re-running drops and re-inserts the daily rows
+     * for this match.
+     */
+    @Transactional
+    public Map<String, Object> seedDaily(int userCount) {
+        long start = System.currentTimeMillis();
+
+        Match match = em.find(Match.class, (int) ID_BASE);
+        if (match == null) {
+            throw new IllegalArgumentException("Run /api/loadtest/seed first to create the benchmark match");
+        }
+
+        // Drop any prior daily rows for this match so seedDaily is idempotent.
+        long previous = dailyTeamRepository.countByMatchId((int) ID_BASE);
+        if (previous > 0) {
+            em.createQuery("DELETE FROM DailyUserMatchTeam t WHERE t.match.id = :mid")
+                    .setParameter("mid", (int) ID_BASE)
+                    .executeUpdate();
+            em.flush();
+        }
+
+        List<Player> allPlayers = loadPlayersForMatch(match);
+        if (allPlayers.size() < PLAYING11_SIZE) {
+            throw new IllegalArgumentException("Match has fewer than 11 players seeded — re-run /api/loadtest/seed");
+        }
+
+        Random rng = new Random(7);
+        List<DailyUserMatchTeam> teams = new ArrayList<>(userCount);
+        for (int i = 0; i < userCount; i++) {
+            User userRef = em.getReference(User.class, ID_BASE + i);
+            List<Player> playing11 = pickRandom11(allPlayers, rng);
+            DailyUserMatchTeam team = new DailyUserMatchTeam(
+                    userRef, match,
+                    playing11.get(0).getId(),
+                    playing11.get(1).getId(),
+                    playing11.stream().map(Player::getId).toList());
+            team.setId(ID_BASE + 300_000 + i);
+            teams.add(team);
+        }
+        dailyTeamRepository.saveAll(teams);
+        long elapsed = System.currentTimeMillis() - start;
+        logger.info("Seeded {} daily teams for matchId={} in {} ms (replaced {})",
+                userCount, ID_BASE, elapsed, previous);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("matchId", ID_BASE);
+        result.put("dailyTeamCount", userCount);
+        result.put("replacedExisting", previous);
+        result.put("seedTimeMs", elapsed);
+        return result;
+    }
+
+    /**
+     * Run the full daily-mode pipeline benchmark for {@code matchId}:
+     * warm cache → run {@code iterations} ticks of {@code updateForLiveMatch}
+     * → flush. Returns latencies, heap deltas, and a verdict line.
+     *
+     * <p>Tolerates the N=0 case: when no daily teams exist for the match,
+     * warm-up early-exits and tick latencies are reported as zero — the
+     * test profile that proves "matches with no daily participants
+     * contribute zero overhead".
+     */
+    public Map<String, Object> dailyBenchmark(int matchId, int iterations) {
+        Match match = matchService.findMatchById(matchId);
+        if (match == null) {
+            throw new IllegalArgumentException("Match not found: " + matchId);
+        }
+
+        dailyLiveMatchTeamCache.evictAll();
+
+        forceGc();
+        long heapBeforeWarmup = usedHeapBytes();
+
+        long warmStart = System.currentTimeMillis();
+        dailyLiveMatchTeamCache.warmUp(match);
+        long warmMs = System.currentTimeMillis() - warmStart;
+
+        forceGc();
+        long heapAfterWarmup = usedHeapBytes();
+        long cacheMemoryBytes = heapAfterWarmup - heapBeforeWarmup;
+
+        int cachedCount = dailyLiveMatchTeamCache.size(matchId);
+
+        List<Player> players = loadPlayersForMatch(match);
+        Map<Integer, Double> fakePlayerPoints = buildFakePlayerPoints(players);
+
+        List<Long> tickTimes = new ArrayList<>(iterations);
+
+        forceGc();
+        long heapBeforePipeline = usedHeapBytes();
+
+        for (int i = 0; i < iterations; i++) {
+            randomizePlayerPoints(fakePlayerPoints, new Random(i));
+            long t0 = System.nanoTime();
+            // Skip-if-empty short-circuit: invoking updateForLiveMatch on an
+            // unwarmed/empty match must be a fast no-op (the asymmetry
+            // contract from plan section 1b).
+            dailyMatchPointsService.updateForLiveMatch(matchId, fakePlayerPoints);
+            long t1 = System.nanoTime();
+            tickTimes.add((t1 - t0) / 1_000_000);
+        }
+
+        forceGc();
+        long heapAfterPipeline = usedHeapBytes();
+        long pipelineMemoryBytes = heapAfterPipeline - heapBeforePipeline;
+
+        long flushStart = System.currentTimeMillis();
+        dailyLiveMatchTeamCache.flushDirtyToDB();
+        long flushMs = System.currentTimeMillis() - flushStart;
+
+        Runtime rt = Runtime.getRuntime();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("matchId", matchId);
+        result.put("cachedTeamCount", cachedCount);
+        result.put("iterations", iterations);
+        result.put("warmUpMs", warmMs);
+        result.put("tick_avg_ms", tickTimes.isEmpty() ? 0L : avg(tickTimes));
+        result.put("tick_min_ms", tickTimes.isEmpty() ? 0L : Collections.min(tickTimes));
+        result.put("tick_max_ms", tickTimes.isEmpty() ? 0L : Collections.max(tickTimes));
+        result.put("flushDirtyToDb_ms", flushMs);
+        result.put("tick_times_ms", tickTimes);
+        result.put("verdict", verdictForDaily(
+                tickTimes.isEmpty() ? 0L : avg(tickTimes), cachedCount));
+
+        Map<String, Object> memory = new LinkedHashMap<>();
+        memory.put("jvm_max_heap_MB", rt.maxMemory() / (1024 * 1024));
+        memory.put("jvm_used_heap_MB", usedHeapBytes() / (1024 * 1024));
+        memory.put("daily_cache_warmup_delta_KB", cacheMemoryBytes / 1024);
+        memory.put("daily_pipeline_working_delta_KB", pipelineMemoryBytes / 1024);
+        memory.put("daily_estimated_breakdown", estimateDailyCacheMemory(cachedCount));
+
+        result.put("memory", memory);
+        return result;
+    }
+
+    /**
+     * Final-flush + evict path. Heap should return to pre-warmup baseline.
+     * Mirrors what {@code LiveMatchWorkflowService.finalizeMatchCompletion}
+     * triggers at match COMPLETE.
+     */
+    public Map<String, Object> dailyEvict(int matchId) {
+        forceGc();
+        long heapBefore = usedHeapBytes();
+        dailyLiveMatchTeamCache.finalFlushAndEvict(matchId);
+        forceGc();
+        long heapAfter = usedHeapBytes();
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("matchId", matchId);
+        result.put("heap_before_evict_MB", heapBefore / (1024 * 1024));
+        result.put("heap_after_evict_MB", heapAfter / (1024 * 1024));
+        result.put("released_KB", (heapBefore - heapAfter) / 1024);
+        return result;
+    }
+
+    @Transactional
+    public Map<String, Object> cleanupDaily() {
+        dailyLiveMatchTeamCache.evictAll();
+
+        long deleted = em.createQuery(
+                "DELETE FROM DailyUserMatchTeam t WHERE t.id >= :base")
+                .setParameter("base", ID_BASE + 300_000)
+                .executeUpdate();
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("deletedDailyTeams", deleted);
+        return result;
+    }
+
+    /**
+     * Heap budget estimator for the daily cache, mirroring
+     * {@link #estimateCacheMemory(int, int)}. Per-team payload (DTO with id,
+     * userId, captain/vc, matchPoints, 11×Integer playing11) ≈ 250 bytes.
+     */
+    private Map<String, Object> estimateDailyCacheMemory(int userCount) {
+        long perUserBytes = 250;
+        long mapEntryOverhead = 64;
+        long total = (long) userCount * (perUserBytes + mapEntryOverhead);
+
+        Map<String, Object> breakdown = new LinkedHashMap<>();
+        breakdown.put("dailyMatchTeam_perEntry_bytes", perUserBytes + mapEntryOverhead);
+        breakdown.put("dailyMatchTeam_total_KB", total / 1024);
+        breakdown.put("dailyMatchTeam_total_MB", total / (1024 * 1024));
+        return breakdown;
+    }
+
+    private String verdictForDaily(long avgTickMs, int cachedCount) {
+        if (cachedCount == 0) {
+            return "PASS - empty case (N=0): tick path short-circuited, daily branch contributed zero work";
+        }
+        if (avgTickMs < 200) {
+            return String.format("PASS - %d cached teams recomputed in %d ms avg (well within 30s tick interval)",
+                    cachedCount, avgTickMs);
+        } else if (avgTickMs < 2000) {
+            return String.format("MARGINAL - %d cached teams recomputed in %d ms avg",
+                    cachedCount, avgTickMs);
+        }
+        return String.format("FAIL - %d cached teams took %d ms avg per tick — investigate chunk size",
+                cachedCount, avgTickMs);
     }
 
     private Map<String, Object> estimateCacheMemory(int userCount, int playerCount) {

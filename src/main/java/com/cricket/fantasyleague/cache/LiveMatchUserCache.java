@@ -23,10 +23,10 @@ import com.cricket.fantasyleague.cache.dto.CachedUserOverallStats;
 import com.cricket.fantasyleague.cache.store.CacheStore;
 import com.cricket.fantasyleague.cache.store.CacheStoreFactory;
 import com.cricket.fantasyleague.entity.table.Match;
-import com.cricket.fantasyleague.entity.table.UserMatchStats;
-import com.cricket.fantasyleague.entity.table.UserOverallStats;
-import com.cricket.fantasyleague.repository.UserMatchStatsRespository;
-import com.cricket.fantasyleague.repository.UserOverallStatsRepository;
+import com.cricket.fantasyleague.entity.table.season.UserMatchStats;
+import com.cricket.fantasyleague.entity.table.season.UserOverallStats;
+import com.cricket.fantasyleague.repository.season.UserMatchStatsRespository;
+import com.cricket.fantasyleague.repository.season.UserOverallStatsRepository;
 
 /**
  * Holds UserMatchStats and UserOverallStats for users active in currently live

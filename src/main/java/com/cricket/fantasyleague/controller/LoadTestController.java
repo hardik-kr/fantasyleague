@@ -73,4 +73,42 @@ public class LoadTestController {
     public ResponseEntity<Map<String, Object>> cleanup() {
         return ResponseEntity.ok(benchmarkService.cleanup());
     }
+
+    // ── Daily Challenge benchmark surface ──
+    //
+    // Mirrors the season-long endpoints above but for the daily pipeline.
+    // Recommended flow for a 100K parity run:
+    //   1. POST /api/loadtest/seed?userCount=100000          — base users + match
+    //   2. POST /api/loadtest/daily/seed?userCount=100000    — daily teams
+    //   3. POST /api/loadtest/daily/benchmark?iterations=60  — warm + 60 ticks + flush
+    //   4. POST /api/loadtest/daily/evict                    — assert heap back to baseline
+    //   5. DELETE /api/loadtest/daily/cleanup                — drop daily test rows
+    //   6. DELETE /api/loadtest/cleanup                      — drop base test data
+    //
+    // Run again with userCount=20000 (avg case) and userCount=0 (empty case)
+    // to validate the workload-asymmetry behaviour from the scaling plan.
+
+    @PostMapping("/daily/seed")
+    public ResponseEntity<Map<String, Object>> seedDaily(
+            @RequestParam(defaultValue = "100") int userCount) {
+        return ResponseEntity.ok(benchmarkService.seedDaily(userCount));
+    }
+
+    @PostMapping("/daily/benchmark")
+    public ResponseEntity<Map<String, Object>> dailyBenchmark(
+            @RequestParam(defaultValue = "800000") int matchId,
+            @RequestParam(defaultValue = "5") int iterations) {
+        return ResponseEntity.ok(benchmarkService.dailyBenchmark(matchId, iterations));
+    }
+
+    @PostMapping("/daily/evict")
+    public ResponseEntity<Map<String, Object>> dailyEvict(
+            @RequestParam(defaultValue = "800000") int matchId) {
+        return ResponseEntity.ok(benchmarkService.dailyEvict(matchId));
+    }
+
+    @DeleteMapping("/daily/cleanup")
+    public ResponseEntity<Map<String, Object>> cleanupDaily() {
+        return ResponseEntity.ok(benchmarkService.cleanupDaily());
+    }
 }

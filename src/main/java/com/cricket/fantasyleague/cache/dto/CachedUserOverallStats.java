@@ -1,7 +1,7 @@
 package com.cricket.fantasyleague.cache.dto;
 
 import com.cricket.fantasyleague.entity.table.User;
-import com.cricket.fantasyleague.entity.table.UserOverallStats;
+import com.cricket.fantasyleague.entity.table.season.UserOverallStats;
 
 /**
  * Lightweight projection of {@link UserOverallStats} for cache storage.

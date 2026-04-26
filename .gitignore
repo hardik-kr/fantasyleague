@@ -1,4 +1,3 @@
-HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
@@ -39,4 +38,6 @@ application-prod.properties
 .env
 .env.*
 
+### Markdown (recursive: matches *.md at any depth, incl. HELP.md, docs/, etc.) ###
 *.md
+**/*.md

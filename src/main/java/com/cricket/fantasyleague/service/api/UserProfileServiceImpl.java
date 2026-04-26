@@ -3,9 +3,9 @@ package com.cricket.fantasyleague.service.api;
 import org.springframework.stereotype.Service;
 
 import com.cricket.fantasyleague.entity.table.User;
-import com.cricket.fantasyleague.entity.table.UserOverallStats;
+import com.cricket.fantasyleague.entity.table.season.UserOverallStats;
 import com.cricket.fantasyleague.payload.response.UserProfileResponse;
-import com.cricket.fantasyleague.repository.UserOverallStatsRepository;
+import com.cricket.fantasyleague.repository.season.UserOverallStatsRepository;
 
 @Service
 public class UserProfileServiceImpl implements UserProfileService {

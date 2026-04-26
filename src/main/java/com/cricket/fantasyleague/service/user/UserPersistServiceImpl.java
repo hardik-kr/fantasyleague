@@ -6,9 +6,9 @@ import org.springframework.stereotype.Service;
 
 import com.cricket.fantasyleague.entity.enums.UserRole;
 import com.cricket.fantasyleague.entity.table.User;
-import com.cricket.fantasyleague.entity.table.UserOverallStats;
+import com.cricket.fantasyleague.entity.table.season.UserOverallStats;
 import com.cricket.fantasyleague.exception.CommonException;
-import com.cricket.fantasyleague.repository.UserOverallStatsRepository;
+import com.cricket.fantasyleague.repository.season.UserOverallStatsRepository;
 import com.cricket.fantasyleague.repository.UserRepository;
 import com.cricket.fantasyleague.util.AppConstants;
 

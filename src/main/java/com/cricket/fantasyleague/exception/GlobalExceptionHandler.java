@@ -74,6 +74,21 @@ public class GlobalExceptionHandler
         return new ResponseEntity<>(resp, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
+    /**
+     * Feature gated off by config (e.g. Daily Challenge disabled). This is a
+     * runtime toggle, not a server fault — log at INFO so it doesn't pollute
+     * error metrics, and respond with 503 so clients (and dashboards) treat
+     * it as "temporarily unavailable" rather than a 5xx outage.
+     */
+    @ExceptionHandler(FeatureDisabledException.class)
+    public ResponseEntity<ApiResponse> featureDisabled(FeatureDisabledException fde)
+    {
+        logger.info("Feature disabled: {}", fde.getMessage());
+        ApiResponse resp = new ApiResponse(fde.getMessage(), false,
+                HttpStatus.SERVICE_UNAVAILABLE.value(), HttpStatus.SERVICE_UNAVAILABLE);
+        return new ResponseEntity<>(resp, HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponse> illegalArgument(IllegalArgumentException ie)
     {

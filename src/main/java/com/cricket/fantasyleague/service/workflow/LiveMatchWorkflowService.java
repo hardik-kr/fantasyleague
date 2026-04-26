@@ -23,6 +23,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.cricket.fantasyleague.cache.DailyLiveMatchTeamCache;
 import com.cricket.fantasyleague.cache.LiveMatchCache;
 import com.cricket.fantasyleague.cache.LiveMatchUserCache;
 import com.cricket.fantasyleague.cache.store.CacheStore;
@@ -33,12 +34,14 @@ import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.PlayerPoints;
 import com.cricket.fantasyleague.repository.FantasyPlayerConfigRepository;
 import com.cricket.fantasyleague.repository.PlayerPointsRepository;
+import com.cricket.fantasyleague.service.daily.DailyMatchLockService;
+import com.cricket.fantasyleague.service.daily.DailyMatchPointsService;
 import com.cricket.fantasyleague.service.match.MatchService;
 import com.cricket.fantasyleague.service.playerpoints.LiveMatchPlayerPointsPersistServiceImpl;
 import com.cricket.fantasyleague.service.playerpoints.LiveMatchPlayerPointsService;
-import com.cricket.fantasyleague.service.usermatchstats.UserMatchStatsService;
-import com.cricket.fantasyleague.service.useroverallpts.UserOverallPtsService;
-import com.cricket.fantasyleague.service.usertransfer.UserTransferService;
+import com.cricket.fantasyleague.service.season.UserMatchStatsService;
+import com.cricket.fantasyleague.service.season.UserOverallPtsService;
+import com.cricket.fantasyleague.service.season.UserTransferService;
 
 /**
  * Orchestrates the full live-match pipeline.
@@ -75,6 +78,9 @@ public class LiveMatchWorkflowService {
     private final PlayerPointsRepository playerPointsRepository;
     private final CacheStoreFactory cacheStoreFactory;
     private final Executor taskExecutor;
+    private final DailyMatchLockService dailyMatchLockService;
+    private final DailyMatchPointsService dailyMatchPointsService;
+    private final DailyLiveMatchTeamCache dailyLiveMatchTeamCache;
 
     @Value("${fantasy.cache.strategy:1}")
     private int strategy;
@@ -116,7 +122,10 @@ public class LiveMatchWorkflowService {
                                     FantasyPlayerConfigRepository fantasyPlayerConfigRepository,
                                     PlayerPointsRepository playerPointsRepository,
                                     CacheStoreFactory cacheStoreFactory,
-                                    @Qualifier("fantasyTaskExecutor") Executor taskExecutor) {
+                                    @Qualifier("fantasyTaskExecutor") Executor taskExecutor,
+                                    DailyMatchLockService dailyMatchLockService,
+                                    DailyMatchPointsService dailyMatchPointsService,
+                                    DailyLiveMatchTeamCache dailyLiveMatchTeamCache) {
         this.liveMatchCache = liveMatchCache;
         this.liveMatchUserCache = liveMatchUserCache;
         this.playerPointsService = playerPointsService;
@@ -129,6 +138,9 @@ public class LiveMatchWorkflowService {
         this.playerPointsRepository = playerPointsRepository;
         this.cacheStoreFactory = cacheStoreFactory;
         this.taskExecutor = taskExecutor;
+        this.dailyMatchLockService = dailyMatchLockService;
+        this.dailyMatchPointsService = dailyMatchPointsService;
+        this.dailyLiveMatchTeamCache = dailyLiveMatchTeamCache;
     }
 
     public void processMatchPipeline(Match match) {
@@ -148,6 +160,22 @@ public class LiveMatchWorkflowService {
             pipeline.join();
 
             updatePlayerTotalPointsLive(match, playerPointsMap);
+
+            try {
+                // Daily Challenge runs alongside the Season pipeline using the
+                // SAME playerPointsMap (player-points work is shared; only the
+                // user-points branch is mode-specific). Warm-up is idempotent
+                // and short-circuits to a no-op when no daily teams exist for
+                // this match — common case for low-engagement fixtures, which
+                // is why we gate the recompute call on size>0.
+                dailyLiveMatchTeamCache.warmUp(match);
+                if (dailyLiveMatchTeamCache.size(match.getId()) > 0) {
+                    dailyMatchPointsService.updateForLiveMatch(match.getId(), playerPointsMap);
+                }
+            } catch (Exception ex) {
+                logger.error("Daily points update failed for matchId={} (season-long pipeline unaffected): {}",
+                        match.getId(), ex.getMessage(), ex);
+            }
 
             logger.info("Pipeline END for matchId={} at {}", match.getId(), nowDateTime());
 
@@ -178,6 +206,12 @@ public class LiveMatchWorkflowService {
         liveMatchUserCache.evictMatch(match.getId());
         liveMatchCache.evictMatch(match.getId());
         evictPlayerConfigCache(match.getId());
+        try {
+            dailyLiveMatchTeamCache.finalFlushAndEvict(match.getId());
+        } catch (Exception ex) {
+            logger.error("Daily cache final flush/evict failed for matchId={} (other caches already finalized): {}",
+                    match.getId(), ex.getMessage(), ex);
+        }
         logger.info("matchId={} complete — final flush done, cache evicted", match.getId());
     }
 
@@ -401,6 +435,14 @@ public class LiveMatchWorkflowService {
             if (liveMatchUserCache.hasDirtyData()) {
                 liveMatchUserCache.flushToDB();
             }
+            if (dailyLiveMatchTeamCache.hasDirtyData()) {
+                try {
+                    dailyLiveMatchTeamCache.flushDirtyToDB();
+                } catch (Exception ex) {
+                    logger.error("Daily cache periodic flush failed (season flush already done, will retry next cycle): {}",
+                            ex.getMessage(), ex);
+                }
+            }
 
             List<Match> liveMatches = getLiveMatches();
             Set<Integer> liveMatchIds = liveMatches.stream()
@@ -432,6 +474,12 @@ public class LiveMatchWorkflowService {
     public void lockTeamsForMatch(Match match) {
         logger.info("Locking teams for matchId={} at {}", match.getId(), nowDateTime());
         userTransferService.lockMatchTeam(match);
+        try {
+            dailyMatchLockService.lockTeamsForMatch(match.getId());
+        } catch (Exception ex) {
+            logger.error("Daily lock failed for matchId={} (season-long lock unaffected): {}",
+                    match.getId(), ex.getMessage(), ex);
+        }
         logger.info("Teams locked for matchId={}", match.getId());
     }
 

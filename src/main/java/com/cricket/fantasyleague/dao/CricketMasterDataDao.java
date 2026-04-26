@@ -220,6 +220,23 @@ public class CricketMasterDataDao {
         return jdbc.query(sql, new MapSqlParameterSource("leagueId", leagueId), PLAYER_WITH_TEAM_MAPPER);
     }
 
+    /**
+     * Daily Challenge: returns the active squads of the two real-world teams that
+     * are playing in the given match. Used to populate the per-match player pool
+     * shown on the Daily team builder and to validate that submitted XIs only
+     * include players from the two participating sides.
+     */
+    public List<PlayerWithTeamData> findPlayersWithTeamByTeamIds(List<Integer> teamIds) {
+        if (teamIds == null || teamIds.isEmpty()) return List.of();
+        String sql = "SELECT DISTINCT p.id, p.name, p.role, t.id AS team_id, t.name AS team_name, t.short_name AS team_short_name" +
+                " FROM players p" +
+                " JOIN player_team pt ON p.id = pt.player_id" +
+                " JOIN teams t ON pt.team_id = t.id" +
+                " WHERE pt.team_id IN (:teamIds) AND pt.is_active = true" +
+                " ORDER BY t.id, p.id";
+        return jdbc.query(sql, new MapSqlParameterSource("teamIds", teamIds), PLAYER_WITH_TEAM_MAPPER);
+    }
+
     // ── Internal ──
 
     private <T> Optional<T> queryForOptional(String sql, MapSqlParameterSource params, RowMapper<T> mapper) {

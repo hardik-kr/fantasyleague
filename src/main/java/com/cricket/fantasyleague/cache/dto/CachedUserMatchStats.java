@@ -7,7 +7,7 @@ import com.cricket.fantasyleague.entity.enums.Booster;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.Player;
 import com.cricket.fantasyleague.entity.table.User;
-import com.cricket.fantasyleague.entity.table.UserMatchStats;
+import com.cricket.fantasyleague.entity.table.season.UserMatchStats;
 
 /**
  * Lightweight projection of {@link UserMatchStats} for cache storage.
