@@ -28,6 +28,24 @@ public interface UserOverallStatsRepository extends JpaRepository<UserOverallSta
     @Query("SELECT COUNT(u) FROM UserOverallStats u WHERE COALESCE(u.totalpoints, 0) > COALESCE(:points, 0)")
     long countUsersAbove(@Param("points") Double points);
 
+    /**
+     * Same as {@link #findAllRanked(Pageable)} but restricted to a fixed set
+     * of user-ids — used by the private-league leaderboard which must only
+     * show stats for league members.
+     */
+    @Query("SELECT u FROM UserOverallStats u WHERE u.userid.id IN (:userIds) " +
+           "ORDER BY COALESCE(u.totalpoints, 0) DESC")
+    Page<UserOverallStats> findRankedByUserIds(@Param("userIds") List<Long> userIds, Pageable pageable);
+
+    /**
+     * Counts users in {@code userIds} whose total points strictly exceed
+     * the supplied value. Used to compute "your rank" inside a private
+     * league without scanning the whole leaderboard.
+     */
+    @Query("SELECT COUNT(u) FROM UserOverallStats u WHERE u.userid.id IN (:userIds) " +
+           "AND COALESCE(u.totalpoints, 0) > COALESCE(:points, 0)")
+    long countUsersAboveByUserIds(@Param("userIds") List<Long> userIds, @Param("points") Double points);
+
     @Transactional
     @Modifying
     @Query(value = "UPDATE user_overall_stats uos" +

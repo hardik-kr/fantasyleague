@@ -187,7 +187,7 @@ public class UserTeamServiceImpl implements UserTeamService {
         UserMatchStats ums = userMatchStatsRepository.findByMatchidAndUserid(match, user);
         if (ums == null) {
             return new UserTeamResponse(false, "No locked team for this user/match",
-                    null, null, null, null, null, null, null, null, null, null);
+                    userId, user.getUsername(), user.getFirstname(), matchId, 0.0, null, 0, null, null, List.of());
         }
 
         Map<Integer, Double> ppMap = new HashMap<>();

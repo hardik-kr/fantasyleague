@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.cricket.fantasyleague.cache.DailyLiveMatchTeamCache;
 import com.cricket.fantasyleague.cache.dto.CachedDailyUserMatchTeam;
+import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.User;
 import com.cricket.fantasyleague.entity.table.daily.DailyUserMatchTeam;
 import com.cricket.fantasyleague.payload.daily.DailyLeaderboardEntry;
@@ -134,8 +135,8 @@ public class DailyLeaderboardServiceImpl implements DailyLeaderboardService {
     }
 
     /** Lightweight match handle for the unique-key lookup; only id is needed by JPA. */
-    private com.cricket.fantasyleague.entity.table.Match loadMatch(Integer matchId) {
-        com.cricket.fantasyleague.entity.table.Match m = new com.cricket.fantasyleague.entity.table.Match();
+    private Match loadMatch(Integer matchId) {
+        Match m = new Match();
         m.setId(matchId);
         return m;
     }

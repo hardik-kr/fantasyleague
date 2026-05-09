@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
+import com.cricket.fantasyleague.exception.league.LeagueFullException;
 import com.cricket.fantasyleague.payload.ApiResponse;
 
 @ControllerAdvice
@@ -93,6 +94,19 @@ public class GlobalExceptionHandler
     public ResponseEntity<ApiResponse> illegalArgument(IllegalArgumentException ie)
     {
         ApiResponse resp = new ApiResponse(ie.getMessage(), false, HttpStatus.BAD_REQUEST.value(), HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(resp, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Joining a private league that has hit its {@code maxMembers} cap. The
+     * cap is enforced atomically by an InnoDB UPDATE — see
+     * {@code PrivateLeagueRepository#incrementMemberCountIfNotFull}.
+     */
+    @ExceptionHandler(LeagueFullException.class)
+    public ResponseEntity<ApiResponse> leagueFull(LeagueFullException lfe)
+    {
+        ApiResponse resp = new ApiResponse(lfe.getMessage(), false,
+                HttpStatus.BAD_REQUEST.value(), HttpStatus.BAD_REQUEST);
         return new ResponseEntity<>(resp, HttpStatus.BAD_REQUEST);
     }
 
