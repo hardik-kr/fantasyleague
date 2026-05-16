@@ -36,6 +36,8 @@ import com.cricket.fantasyleague.repository.FantasyPlayerConfigRepository;
 import com.cricket.fantasyleague.repository.PlayerPointsRepository;
 import com.cricket.fantasyleague.service.daily.DailyMatchLockService;
 import com.cricket.fantasyleague.service.daily.DailyMatchPointsService;
+import com.cricket.fantasyleague.service.masterdata.LiveMasterCacheScope;
+import com.cricket.fantasyleague.service.masterdata.MasterDataReadService;
 import com.cricket.fantasyleague.service.match.MatchService;
 import com.cricket.fantasyleague.service.playerpoints.LiveMatchPlayerPointsPersistServiceImpl;
 import com.cricket.fantasyleague.service.playerpoints.LiveMatchPlayerPointsService;
@@ -81,6 +83,8 @@ public class LiveMatchWorkflowService {
     private final DailyMatchLockService dailyMatchLockService;
     private final DailyMatchPointsService dailyMatchPointsService;
     private final DailyLiveMatchTeamCache dailyLiveMatchTeamCache;
+    private final MasterDataReadService masterDataReadService;
+    private final LiveMasterCacheScope liveMasterCacheScope;
 
     @Value("${fantasy.cache.strategy:1}")
     private int strategy;
@@ -125,7 +129,9 @@ public class LiveMatchWorkflowService {
                                     @Qualifier("fantasyTaskExecutor") Executor taskExecutor,
                                     DailyMatchLockService dailyMatchLockService,
                                     DailyMatchPointsService dailyMatchPointsService,
-                                    DailyLiveMatchTeamCache dailyLiveMatchTeamCache) {
+                                    DailyLiveMatchTeamCache dailyLiveMatchTeamCache,
+                                    MasterDataReadService masterDataReadService,
+                                    LiveMasterCacheScope liveMasterCacheScope) {
         this.liveMatchCache = liveMatchCache;
         this.liveMatchUserCache = liveMatchUserCache;
         this.playerPointsService = playerPointsService;
@@ -141,6 +147,8 @@ public class LiveMatchWorkflowService {
         this.dailyMatchLockService = dailyMatchLockService;
         this.dailyMatchPointsService = dailyMatchPointsService;
         this.dailyLiveMatchTeamCache = dailyLiveMatchTeamCache;
+        this.masterDataReadService = masterDataReadService;
+        this.liveMasterCacheScope = liveMasterCacheScope;
     }
 
     public void processMatchPipeline(Match match) {
@@ -152,6 +160,9 @@ public class LiveMatchWorkflowService {
             ensurePlayerConfigInitialized(match);
 
             Map<Integer, Double> playerPointsMap = playerPointsService.calculatePlayerPoints(match);
+            if (masterDataReadService.isEnabled()) {
+                liveMasterCacheScope.updateFromPlayerPointsMap(match, playerPointsMap);
+            }
 
             CompletableFuture<Void> pipeline = CompletableFuture
                     .runAsync(() -> userMatchStatsService.calcMatchUserPointsData(match, playerPointsMap), taskExecutor)
@@ -212,6 +223,12 @@ public class LiveMatchWorkflowService {
             logger.error("Daily cache final flush/evict failed for matchId={} (other caches already finalized): {}",
                     match.getId(), ex.getMessage(), ex);
         }
+        try {
+            masterDataReadService.reloadMatchesAndCachedPlayerLeagues();
+        } catch (Exception ex) {
+            logger.warn("Master data cache reload after match finalization failed: {}", ex.getMessage());
+        }
+        liveMasterCacheScope.clearIfMatch(match.getId());
         logger.info("matchId={} complete — final flush done, cache evicted", match.getId());
     }
 

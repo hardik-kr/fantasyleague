@@ -103,6 +103,18 @@ public class CricketMasterDataDao {
         return queryForOptional(sql, params, MATCH_MAPPER);
     }
 
+    /**
+     * Season-long match currently in a live window ({@code IN_PROGRESS} or {@code DELAY}).
+     * Used by {@code GET /api/seasons/me/my-team} to prefer the caller's locked XI when a game is on.
+     */
+    public Optional<MatchData> findActiveLiveMatch() {
+        String sql = "SELECT " + MATCH_COLS + " FROM matches m" +
+                " WHERE m.match_state IN ('IN_PROGRESS', 'DELAY')" +
+                " AND (m.is_match_complete IS NULL OR m.is_match_complete = false)" +
+                " ORDER BY m.date DESC, m.time DESC LIMIT 1";
+        return queryForOptional(sql, new MapSqlParameterSource(), MATCH_MAPPER);
+    }
+
     public List<MatchData> findAllMatches() {
         String sql = "SELECT " + MATCH_COLS + " FROM matches m ORDER BY m.date, m.time, m.id";
         return jdbc.query(sql, new MapSqlParameterSource(), MATCH_MAPPER);
@@ -218,6 +230,21 @@ public class CricketMasterDataDao {
                 " WHERE t.league_id = :leagueId AND pt.is_active = true" +
                 " ORDER BY p.id";
         return jdbc.query(sql, new MapSqlParameterSource("leagueId", leagueId), PLAYER_WITH_TEAM_MAPPER);
+    }
+
+    /** Scoped roster for master-cache live refresh (subset of {@link #findPlayersWithTeamByLeagueId}). */
+    public List<PlayerWithTeamData> findPlayersWithTeamByLeagueIdAndPlayerIds(Integer leagueId, List<Integer> playerIds) {
+        if (playerIds == null || playerIds.isEmpty()) {
+            return List.of();
+        }
+        String sql = "SELECT DISTINCT p.id, p.name, p.role, t.id AS team_id, t.name AS team_name, t.short_name AS team_short_name" +
+                " FROM players p" +
+                " JOIN player_team pt ON p.id = pt.player_id" +
+                " JOIN teams t ON pt.team_id = t.id" +
+                " WHERE t.league_id = :leagueId AND pt.is_active = true AND p.id IN (:playerIds)" +
+                " ORDER BY p.id";
+        return jdbc.query(sql, new MapSqlParameterSource("leagueId", leagueId).addValue("playerIds", playerIds),
+                PLAYER_WITH_TEAM_MAPPER);
     }
 
     /**

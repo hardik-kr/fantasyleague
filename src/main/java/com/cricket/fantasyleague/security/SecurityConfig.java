@@ -46,6 +46,7 @@ public class SecurityConfig
         http.csrf(csrf->csrf.disable())
             .cors(cors->cors.disable())
             .authorizeHttpRequests(auth->auth.requestMatchers("/auth/login","/auth/signup/**","/api/loadtest/**","/api/masterdata/**","/api/data/**","/test/**","/health","/health/**","/actuator/**").permitAll()
+            .requestMatchers("/api/admin/**").hasAuthority(UserRole.ADMIN.name())
             .requestMatchers("/api/seasons/**").hasAnyAuthority(UserRole.USER.name())
             .requestMatchers("/api/daily/**").hasAnyAuthority(UserRole.USER.name())
             .anyRequest().authenticated())

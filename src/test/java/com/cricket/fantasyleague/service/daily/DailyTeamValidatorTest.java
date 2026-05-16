@@ -120,10 +120,6 @@ class DailyTeamValidatorTest {
     @Test
     void validate_tooManyBatters_throws() {
         Fixture f = roleFixture(7, 3, 1, 0); // 7 batters > 6
-        when(cricketDao.findTeamsByPlayerId(anyInt())).thenAnswer(inv -> {
-            int pid = inv.getArgument(0);
-            return List.of(new PlayerTeamData(pid, f.teamByPlayer.get(pid), true));
-        });
         InvalidTeamException ex = assertThrows(InvalidTeamException.class,
                 () -> validator.validate(f.request, f.players, f.pool, f.configMap));
         assert ex.getMessage().contains("Batters");
@@ -132,10 +128,6 @@ class DailyTeamValidatorTest {
     @Test
     void validate_tooFewKeepers_throws() {
         Fixture f = roleFixture(4, 4, 0, 3); // 0 keepers < 1
-        when(cricketDao.findTeamsByPlayerId(anyInt())).thenAnswer(inv -> {
-            int pid = inv.getArgument(0);
-            return List.of(new PlayerTeamData(pid, f.teamByPlayer.get(pid), true));
-        });
         InvalidTeamException ex = assertThrows(InvalidTeamException.class,
                 () -> validator.validate(f.request, f.players, f.pool, f.configMap));
         assert ex.getMessage().contains("Keepers");
@@ -147,10 +139,6 @@ class DailyTeamValidatorTest {
         for (FantasyPlayerConfig cfg : f.configMap.values()) {
             cfg.setCredit(15.0); // 11 * 15 = 165 > 100
         }
-        when(cricketDao.findTeamsByPlayerId(anyInt())).thenAnswer(inv -> {
-            int pid = inv.getArgument(0);
-            return List.of(new PlayerTeamData(pid, f.teamByPlayer.get(pid), true));
-        });
         InvalidTeamException ex = assertThrows(InvalidTeamException.class,
                 () -> validator.validate(f.request, f.players, f.pool, f.configMap));
         assert ex.getMessage().contains("credit");
@@ -165,10 +153,6 @@ class DailyTeamValidatorTest {
             FantasyPlayerConfig cfg = f.configMap.get(p.getId());
             if (cfg != null && marked++ < 5) cfg.setOverseas(true);
         }
-        when(cricketDao.findTeamsByPlayerId(anyInt())).thenAnswer(inv -> {
-            int pid = inv.getArgument(0);
-            return List.of(new PlayerTeamData(pid, f.teamByPlayer.get(pid), true));
-        });
         InvalidTeamException ex = assertThrows(InvalidTeamException.class,
                 () -> validator.validate(f.request, f.players, f.pool, f.configMap));
         assert ex.getMessage().contains("overseas");

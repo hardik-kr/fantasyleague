@@ -15,4 +15,7 @@ public interface MatchService
     Match findPreviousMatch(Match currentMatch);
     Match findLockedMatch(LocalDate currDate, LocalTime currTime);
     Match findNextUpcomingMatch();
+
+    /** Live season-long match ({@code IN_PROGRESS}/{@code DELAY}), if any. */
+    Match findActiveLiveMatch();
 }

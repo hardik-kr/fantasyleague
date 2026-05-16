@@ -130,6 +130,61 @@ public class UserTeamServiceImpl implements UserTeamService {
     }
 
     @Override
+    public DraftResponse getMyTeamForPreview(User user) {
+        Match liveMatch = matchService.findActiveLiveMatch();
+        if (liveMatch != null) {
+            UserMatchStats locked = userMatchStatsRepository.findByMatchidAndUserid(liveMatch, user);
+            if (locked != null) {
+                return draftResponseFromLockedMatch(liveMatch, locked, user);
+            }
+        }
+        return getDraftForNextMatch(user);
+    }
+
+    private DraftResponse draftResponseFromLockedMatch(Match match, UserMatchStats ums, User user) {
+        String teamA = match.getTeamA() != null ? match.getTeamA().getShortName() : null;
+        String teamB = match.getTeamB() != null ? match.getTeamB().getShortName() : null;
+
+        List<PlayerBrief> playing11 = List.of();
+        if (ums.getPlaying11() != null) {
+            playing11 = new ArrayList<>(ums.getPlaying11().size());
+            for (Player p : ums.getPlaying11()) {
+                playing11.add(new PlayerBrief(p.getId(), p.getName(), p.getRole(), null));
+            }
+        }
+
+        UserOverallStats overall = userOverallStatsRepository.findByUserid(user);
+        List<String> usedBoosters = overall != null
+                ? overall.getUsedBoosterSet().stream().map(Enum::name).toList()
+                : List.of();
+
+        List<Integer> previousPlaying11 = null;
+        Match prevMatch = matchService.findPreviousMatch(match);
+        if (prevMatch != null) {
+            UserMatchStats prevStats = userMatchStatsRepository.findByMatchidAndUserid(prevMatch, user);
+            if (prevStats != null && prevStats.getPlaying11() != null) {
+                previousPlaying11 = prevStats.getPlaying11().stream().map(Player::getId).toList();
+            }
+        }
+
+        return new DraftResponse(null,
+                match.getId(), match.getDate(), match.getTime(),
+                match.getMatchDesc(), teamA, teamB,
+                true,
+                ums.getBoosterused(),
+                ums.getTransferused(),
+                ums.getCaptainid() != null ? ums.getCaptainid().getId() : null,
+                ums.getVicecaptainid() != null ? ums.getVicecaptainid().getId() : null,
+                ums.getTripleboosterplayerid() != null ? ums.getTripleboosterplayerid().getId() : null,
+                playing11,
+                overall != null ? overall.getTransferleft() : 0,
+                overall != null ? overall.getBoosterleft() : 0,
+                freeTransferMatchIds.contains(match.getId()),
+                usedBoosters,
+                previousPlaying11);
+    }
+
+    @Override
     public List<MatchHistoryResponse> getMatchHistory(User user) {
         List<UserMatchStats> allStats = userMatchStatsRepository.findByUserid(user);
         List<MatchHistoryResponse> result = new ArrayList<>(allStats.size());

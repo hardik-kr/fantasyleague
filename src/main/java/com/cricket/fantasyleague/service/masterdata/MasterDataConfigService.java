@@ -35,6 +35,7 @@ public class MasterDataConfigService {
 
     private final CricketMasterDataDao cricketMasterDataDao;
     private final FantasyPlayerConfigRepository fantasyPlayerConfigRepository;
+    private final MasterDataReadService masterDataReadService;
     private final ObjectMapper objectMapper;
 
     @Value("${fantasy.ipl.gamedayplayers.url:https://fantasy.iplt20.com/classic/api/feed/gamedayplayers?lang=en&tourgamedayId=1}")
@@ -42,9 +43,11 @@ public class MasterDataConfigService {
 
     public MasterDataConfigService(
             CricketMasterDataDao cricketMasterDataDao,
-            FantasyPlayerConfigRepository fantasyPlayerConfigRepository) {
+            FantasyPlayerConfigRepository fantasyPlayerConfigRepository,
+            MasterDataReadService masterDataReadService) {
         this.cricketMasterDataDao = cricketMasterDataDao;
         this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
+        this.masterDataReadService = masterDataReadService;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -136,6 +139,11 @@ public class MasterDataConfigService {
             }
             logger.info("leagueId={} — created {} default configs for remaining DB players",
                     league.id(), defaultCreated);
+        }
+        try {
+            masterDataReadService.reloadMatchesAndCachedPlayerLeagues();
+        } catch (Exception ex) {
+            logger.warn("Master data cache reload after fantasy config init failed: {}", ex.getMessage());
         }
     }
 

@@ -61,11 +61,30 @@ public class SeasonController {
         this.userRepository = userRepository;
     }
 
+    /**
+     * Team preview endpoint.
+     *
+     * This endpoint is used to get the preview of the user's team for the 
+     * upcoming match (Draft) OR
+     * locked team for the live match (My Team)
+     */
+    @GetMapping("/me/my-team")
+    public ResponseEntity<DraftResponse> getMyTeamForPreview() {
+        return ResponseEntity.ok(userTeamService.getMyTeamForPreview(getAuthenticatedUser()));
+    }
+
+    /**
+     * Draft team endpoint.
+     *
+     * This endpoint is used to get the draft team for the upcoming match (draft Mode)
+     * 
+     */
     @GetMapping("/me/draft")
     public ResponseEntity<DraftResponse> getMyDraft() {
         return ResponseEntity.ok(userTeamService.getDraftForNextMatch(getAuthenticatedUser()));
     }
 
+    
     @GetMapping("/me/history")
     public ResponseEntity<List<MatchHistoryResponse>> getMyHistory() {
         return ResponseEntity.ok(userTeamService.getMatchHistory(getAuthenticatedUser()));

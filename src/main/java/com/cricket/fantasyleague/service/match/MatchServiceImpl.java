@@ -72,4 +72,11 @@ public class MatchServiceImpl implements MatchService {
                 .map(cricketEntities::toMatch)
                 .orElse(null);
     }
+
+    @Override
+    public Match findActiveLiveMatch() {
+        return dao.findActiveLiveMatch()
+                .map(cricketEntities::toMatch)
+                .orElse(null);
+    }
 }
