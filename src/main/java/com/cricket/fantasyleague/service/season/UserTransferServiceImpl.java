@@ -381,6 +381,7 @@ public class UserTransferServiceImpl implements UserTransferService {
                     draft.setMatchid(nextMatch);
                     draft.setTransferused(0);
                     draft.setBoosterused(null);
+                    draft.setTripleboosterplayerid(null);
                 }
                 persistService.saveAllDrafts(draftUpdates);
             } else {
