@@ -51,15 +51,22 @@ public class UserTransferServiceImpl implements UserTransferService {
                                    MatchService matchService,
                                    FantasyPlayerConfigRepository fantasyPlayerConfigRepository,
                                    CricketMasterDataDao cricketDao,
-                                   @Value("${fantasy.free-transfer-match-ids:}") List<Integer> freeTransferMatchIdList,
+                                   @Value("${fantasy.free-transfer-match-ids:}") String freeTransferMatchIdsCsv,
                                    @Value("${fantasy.lock.batch-size:5000}") int lockBatchSize,
                                    @Value("${fantasy.lock.batch-delay-ms:1000}") long lockBatchDelayMs) {
         this.persistService = persistService;
         this.matchService = matchService;
         this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
         this.cricketDao = cricketDao;
-        this.freeTransferMatchIds = freeTransferMatchIdList != null && !freeTransferMatchIdList.isEmpty()
-                ? new HashSet<>(freeTransferMatchIdList) : Collections.emptySet();
+        this.freeTransferMatchIds = new HashSet<>();
+        if (freeTransferMatchIdsCsv != null && !freeTransferMatchIdsCsv.isBlank()) {
+            for (String part : freeTransferMatchIdsCsv.split(",")) {
+                String id = part.trim();
+                if (!id.isEmpty()) {
+                    this.freeTransferMatchIds.add(Integer.valueOf(id));
+                }
+            }
+        }
         this.lockBatchSize = lockBatchSize;
         this.lockBatchDelayMs = lockBatchDelayMs;
         logger.info("Free transfer match IDs: {}", this.freeTransferMatchIds);

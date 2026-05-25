@@ -53,7 +53,7 @@ public class UserTeamServiceImpl implements UserTeamService {
                                UserRepository userRepository,
                                CricketMasterDataDao dao,
                                CricketEntityMapper mapper,
-                               @Value("${fantasy.free-transfer-match-ids:}") List<Integer> freeTransferMatchIdList) {
+                               @Value("${fantasy.free-transfer-match-ids:}") String freeTransferMatchIdsCsv) {
         this.matchService = matchService;
         this.userMatchStatsRepository = userMatchStatsRepository;
         this.userMatchStatsDraftRepository = userMatchStatsDraftRepository;
@@ -62,8 +62,15 @@ public class UserTeamServiceImpl implements UserTeamService {
         this.userRepository = userRepository;
         this.dao = dao;
         this.mapper = mapper;
-        this.freeTransferMatchIds = freeTransferMatchIdList != null && !freeTransferMatchIdList.isEmpty()
-                ? new HashSet<>(freeTransferMatchIdList) : Collections.emptySet();
+        this.freeTransferMatchIds = new HashSet<>();
+        if (freeTransferMatchIdsCsv != null && !freeTransferMatchIdsCsv.isBlank()) {
+            for (String part : freeTransferMatchIdsCsv.split(",")) {
+                String id = part.trim();
+                if (!id.isEmpty()) {
+                    this.freeTransferMatchIds.add(Integer.valueOf(id));
+                }
+            }
+        }
     }
 
     @Override
