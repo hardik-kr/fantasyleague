@@ -20,6 +20,7 @@ import com.cricket.fantasyleague.payload.ApiResponse;
 import com.cricket.fantasyleague.payload.dto.UserDto;
 import com.cricket.fantasyleague.payload.season.UserTransferDto;
 import com.cricket.fantasyleague.payload.season.DraftResponse;
+import com.cricket.fantasyleague.payload.season.MyTeamResponse;
 import com.cricket.fantasyleague.payload.season.LeaderboardPageResponse;
 import com.cricket.fantasyleague.payload.season.MatchHistoryResponse;
 import com.cricket.fantasyleague.payload.response.MatchPlayerPointsResponse;
@@ -69,7 +70,7 @@ public class SeasonController {
      * locked team for the live match (My Team)
      */
     @GetMapping("/me/my-team")
-    public ResponseEntity<DraftResponse> getMyTeamForPreview() {
+    public ResponseEntity<MyTeamResponse> getMyTeamForPreview() {
         return ResponseEntity.ok(userTeamService.getMyTeamForPreview(getAuthenticatedUser()));
     }
 

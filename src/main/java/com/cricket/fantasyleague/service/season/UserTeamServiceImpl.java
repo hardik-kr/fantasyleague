@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import com.cricket.fantasyleague.dao.CricketEntityMapper;
 import com.cricket.fantasyleague.dao.CricketMasterDataDao;
+import com.cricket.fantasyleague.dao.model.PlayerWithTeamData;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.Player;
 import com.cricket.fantasyleague.entity.table.PlayerPoints;
@@ -22,6 +23,8 @@ import com.cricket.fantasyleague.entity.table.season.UserMatchStatsDraft;
 import com.cricket.fantasyleague.entity.table.season.UserOverallStats;
 import com.cricket.fantasyleague.payload.season.DraftResponse;
 import com.cricket.fantasyleague.payload.season.MatchHistoryResponse;
+import com.cricket.fantasyleague.payload.season.MyTeamPlayer;
+import com.cricket.fantasyleague.payload.season.MyTeamResponse;
 import com.cricket.fantasyleague.payload.response.PlayerBrief;
 import com.cricket.fantasyleague.payload.response.PlayerDetailResponse;
 import com.cricket.fantasyleague.payload.season.UserTeamResponse;
@@ -95,15 +98,7 @@ public class UserTeamServiceImpl implements UserTeamService {
                     null, null, null, null, null, null);
         }
 
-        List<PlayerBrief> playing11 = List.of();
-        if (draft.getPlaying11() != null) {
-            playing11 = new ArrayList<>(draft.getPlaying11().size());
-            for (Player p : draft.getPlaying11()) {
-                // Season-long doesn't render a per-player team column — leave
-                // `team` null and let @JsonInclude(NON_NULL) drop it from the wire.
-                playing11.add(new PlayerBrief(p.getId(), p.getName(), p.getRole(), null));
-            }
-        }
+        List<PlayerBrief> playing11 = buildPlayerBriefs(draft.getPlaying11(), nextMatch);
 
         UserOverallStats overall = userOverallStatsRepository.findByUserid(user);
         List<String> usedBoosters = overall != null
@@ -137,58 +132,76 @@ public class UserTeamServiceImpl implements UserTeamService {
     }
 
     @Override
-    public DraftResponse getMyTeamForPreview(User user) {
+    public MyTeamResponse getMyTeamForPreview(User user) {
         Match liveMatch = matchService.findActiveLiveMatch();
         if (liveMatch != null) {
             UserMatchStats locked = userMatchStatsRepository.findByMatchidAndUserid(liveMatch, user);
             if (locked != null) {
-                return draftResponseFromLockedMatch(liveMatch, locked, user);
+                return myTeamFromLockedMatch(liveMatch, locked);
             }
         }
-        return getDraftForNextMatch(user);
+        return myTeamFromUpcomingMatch(user);
     }
 
-    private DraftResponse draftResponseFromLockedMatch(Match match, UserMatchStats ums, User user) {
+    private MyTeamResponse myTeamFromLockedMatch(Match match, UserMatchStats ums) {
         String teamA = match.getTeamA() != null ? match.getTeamA().getShortName() : null;
         String teamB = match.getTeamB() != null ? match.getTeamB().getShortName() : null;
+        Map<Integer, Double> ppMap = buildPlayerPointsMap(match.getId());
 
-        List<PlayerBrief> playing11 = List.of();
-        if (ums.getPlaying11() != null) {
-            playing11 = new ArrayList<>(ums.getPlaying11().size());
-            for (Player p : ums.getPlaying11()) {
-                playing11.add(new PlayerBrief(p.getId(), p.getName(), p.getRole(), null));
-            }
-        }
-
-        UserOverallStats overall = userOverallStatsRepository.findByUserid(user);
-        List<String> usedBoosters = overall != null
-                ? overall.getUsedBoosterSet().stream().map(Enum::name).toList()
-                : List.of();
-
-        List<Integer> previousPlaying11 = null;
-        Match prevMatch = matchService.findPreviousMatch(match);
-        if (prevMatch != null) {
-            UserMatchStats prevStats = userMatchStatsRepository.findByMatchidAndUserid(prevMatch, user);
-            if (prevStats != null && prevStats.getPlaying11() != null) {
-                previousPlaying11 = prevStats.getPlaying11().stream().map(Player::getId).toList();
-            }
-        }
-
-        return new DraftResponse(null,
-                match.getId(), match.getDate(), match.getTime(),
-                match.getMatchDesc(), teamA, teamB,
-                true,
+        return new MyTeamResponse(
+                null,
+                matchStateName(match),
+                match.getMatchDesc(),
+                match.getDate(),
+                teamA,
+                teamB,
                 ums.getBoosterused(),
-                ums.getTransferused(),
                 ums.getCaptainid() != null ? ums.getCaptainid().getId() : null,
                 ums.getVicecaptainid() != null ? ums.getVicecaptainid().getId() : null,
                 ums.getTripleboosterplayerid() != null ? ums.getTripleboosterplayerid().getId() : null,
-                playing11,
-                overall != null ? overall.getTransferleft() : 0,
-                overall != null ? overall.getBoosterleft() : 0,
-                freeTransferMatchIds.contains(match.getId()),
-                usedBoosters,
-                previousPlaying11);
+                ums.getMatchpoints(),
+                buildMyTeamPlayers(ums.getPlaying11(), match, ppMap));
+    }
+
+    private MyTeamResponse myTeamFromUpcomingMatch(User user) {
+        Match nextMatch = matchService.findNextUpcomingMatch();
+        if (nextMatch == null) {
+            return new MyTeamResponse(
+                    "No upcoming match found",
+                    null, null, null, null, null,
+                    null, null, null, null, null,
+                    List.of());
+        }
+
+        String teamA = nextMatch.getTeamA() != null ? nextMatch.getTeamA().getShortName() : null;
+        String teamB = nextMatch.getTeamB() != null ? nextMatch.getTeamB().getShortName() : null;
+        UserMatchStatsDraft draft = userMatchStatsDraftRepository.findByMatchidAndUserid(nextMatch, user);
+        if (draft == null || draft.getPlaying11() == null || draft.getPlaying11().isEmpty()) {
+            return new MyTeamResponse(
+                    null,
+                    matchStateName(nextMatch),
+                    nextMatch.getMatchDesc(),
+                    nextMatch.getDate(),
+                    teamA,
+                    teamB,
+                    null,
+                    null, null, null, null,
+                    List.of());
+        }
+
+        return new MyTeamResponse(
+                null,
+                matchStateName(nextMatch),
+                nextMatch.getMatchDesc(),
+                nextMatch.getDate(),
+                teamA,
+                teamB,
+                draft.getBoosterused(),
+                draft.getCaptainid() != null ? draft.getCaptainid().getId() : null,
+                draft.getVicecaptainid() != null ? draft.getVicecaptainid().getId() : null,
+                draft.getTripleboosterplayerid() != null ? draft.getTripleboosterplayerid().getId() : null,
+                null,
+                buildMyTeamPlayers(draft.getPlaying11(), nextMatch, null));
     }
 
     @Override
@@ -295,5 +308,59 @@ public class UserTeamServiceImpl implements UserTeamService {
             return "TRIPLE_SCORER";
         }
         return null;
+    }
+
+    private String matchStateName(Match match) {
+        return match != null && match.getMatchState() != null ? match.getMatchState().name() : null;
+    }
+
+    private Map<Integer, String> buildPlayerTeamMap(Match match) {
+        if (match == null) {
+            return Map.of();
+        }
+        Integer teamAId = match.getTeamA() != null ? match.getTeamA().getId() : null;
+        Integer teamBId = match.getTeamB() != null ? match.getTeamB().getId() : null;
+        if (teamAId == null || teamBId == null) {
+            return Map.of();
+        }
+        List<PlayerWithTeamData> rows = dao.findPlayersWithTeamByTeamIds(List.of(teamAId, teamBId));
+        Map<Integer, String> map = new HashMap<>(rows.size());
+        for (PlayerWithTeamData p : rows) {
+            map.put(p.id(), p.teamShortName());
+        }
+        return map;
+    }
+
+    private Map<Integer, Double> buildPlayerPointsMap(Integer matchId) {
+        Map<Integer, Double> ppMap = new HashMap<>();
+        for (PlayerPoints pp : playerPointsRepository.findByMatchId(matchId)) {
+            ppMap.put(pp.getPlayerId(), pp.getPlayerpoints());
+        }
+        return ppMap;
+    }
+
+    private List<PlayerBrief> buildPlayerBriefs(List<Player> players, Match match) {
+        if (players == null || players.isEmpty()) {
+            return List.of();
+        }
+        Map<Integer, String> teamMap = buildPlayerTeamMap(match);
+        List<PlayerBrief> briefs = new ArrayList<>(players.size());
+        for (Player p : players) {
+            briefs.add(new PlayerBrief(p.getId(), p.getName(), p.getRole(), teamMap.get(p.getId())));
+        }
+        return briefs;
+    }
+
+    private List<MyTeamPlayer> buildMyTeamPlayers(List<Player> players, Match match, Map<Integer, Double> pointsById) {
+        if (players == null || players.isEmpty()) {
+            return List.of();
+        }
+        Map<Integer, String> teamMap = buildPlayerTeamMap(match);
+        List<MyTeamPlayer> rows = new ArrayList<>(players.size());
+        for (Player p : players) {
+            Double pts = pointsById != null ? pointsById.get(p.getId()) : null;
+            rows.add(new MyTeamPlayer(p.getId(), p.getName(), p.getRole(), teamMap.get(p.getId()), pts));
+        }
+        return rows;
     }
 }
