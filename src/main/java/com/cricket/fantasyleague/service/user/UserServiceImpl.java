@@ -6,6 +6,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.cricket.fantasyleague.entity.enums.UserRole;
@@ -19,9 +20,13 @@ import com.cricket.fantasyleague.util.AppConstants;
 public class UserServiceImpl implements UserService, UserDetailsService {
 
     private final UserPersistServiceImpl persistService;
+    private final Integer activeLeagueId;
 
-    public UserServiceImpl(UserPersistServiceImpl persistService) {
+    public UserServiceImpl(
+            UserPersistServiceImpl persistService,
+            @Value("${fantasy.active-league-id:2}") Integer activeLeagueId) {
         this.persistService = persistService;
+        this.activeLeagueId = activeLeagueId;
     }
 
     @Override
@@ -45,7 +50,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     }
 
     private void initializeUserOverallStats(User user) {
-        Integer transfer = AppConstants.FantasyPoints.TOTAL_TRANSFER;
+        Integer transfer = AppConstants.FantasyPoints.totalTransferForLeague(activeLeagueId);
         Integer booster = AppConstants.FantasyPoints.TOTAL_BOOSTER;
         UserOverallStats stats = new UserOverallStats(user, 0.0, 0.0, booster, transfer);
         persistService.saveOverallStats(stats);

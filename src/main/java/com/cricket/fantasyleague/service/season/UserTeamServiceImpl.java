@@ -95,7 +95,7 @@ public class UserTeamServiceImpl implements UserTeamService {
                     nextMatch.getId(), nextMatch.getDate(), nextMatch.getTime(),
                     nextMatch.getMatchDesc(), teamA, teamB,
                     false, null, null, null, null, null,
-                    null, null, null, null, null, null);
+                    null, null, null, freeTransferMatchIds.contains(nextMatch.getId()), null, null);
         }
 
         List<PlayerBrief> playing11 = buildPlayerBriefs(draft.getPlaying11(), nextMatch);

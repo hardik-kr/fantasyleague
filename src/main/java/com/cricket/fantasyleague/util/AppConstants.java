@@ -59,6 +59,18 @@ public final class AppConstants
     {
         public static final Integer TOTAL_TRANSFER = 120 ;
         public static final Integer TOTAL_BOOSTER = 7 ;
+
+        public static Integer totalTransferForLeague(Integer leagueId) {
+            if (leagueId == null) {
+                return TOTAL_TRANSFER;
+            }
+            return switch (leagueId) {
+                case 2 -> 120; // IPL: 74 matches
+                case 12 -> 60; // ICC Women's T20 WC: 33 matches
+                case 3 -> 40; // WPL: 22 matches
+                default -> TOTAL_TRANSFER;
+            };
+        }
     }
 
     public final class masterdata

@@ -4,10 +4,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.cricket.fantasyleague.payload.ApiResponse;
 import com.cricket.fantasyleague.service.masterdata.MasterDataConfigService;
+import com.cricket.fantasyleague.service.masterdata.MasterDataConfigService.FantasyPlayerConfigInitSummary;
 
 @RestController
 @RequestMapping("/api/data")
@@ -20,11 +22,14 @@ public class MasterDataController {
     }
 
     @PostMapping("/fantplayer-config")
-    public ResponseEntity<ApiResponse> initializeFantasyPlayerConfig() {
+    public ResponseEntity<ApiResponse> initializeFantasyPlayerConfig(
+            @RequestParam(required = false) Integer leagueId) {
         try {
-            masterDataConfigService.initializeFantasyPlayerConfigs();
+            FantasyPlayerConfigInitSummary summary = masterDataConfigService.initializeFantasyPlayerConfigs(leagueId);
             return ResponseEntity.ok(new ApiResponse(
-                    "Fantasy Player Config initialized successfully",
+                    "Fantasy Player Config initialized successfully: created=" + summary.created()
+                            + ", skipped=" + summary.skipped()
+                            + ", totalPlayers=" + summary.totalPlayers(),
                     true,
                     HttpStatus.OK.value(),
                     HttpStatus.OK
@@ -40,5 +45,4 @@ public class MasterDataController {
         }
     }
 }
-
 
