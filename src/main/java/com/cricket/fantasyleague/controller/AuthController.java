@@ -13,6 +13,8 @@ import com.cricket.fantasyleague.payload.jwtdto.JwtRequest;
 import com.cricket.fantasyleague.payload.jwtdto.JwtResponse;
 import com.cricket.fantasyleague.service.workflow.AuthWorkflowService;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 
 @RestController
@@ -26,8 +28,10 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<JwtResponse> login(@RequestBody JwtRequest request) {
-        return authWorkflowService.login(request);
+    public ResponseEntity<JwtResponse> login(
+            @RequestBody JwtRequest request,
+            HttpServletResponse response) {
+        return authWorkflowService.login(request, response);
     }
 
     @PostMapping("/signup/initiate")
@@ -36,7 +40,19 @@ public class AuthController {
     }
 
     @PostMapping("/signup/verify")
-    public ResponseEntity<ApiResponse> verifySignup(@Valid @RequestBody OtpVerifyRequest request) {
-        return authWorkflowService.verifySignup(request);
+    public ResponseEntity<JwtResponse> verifySignup(
+            @Valid @RequestBody OtpVerifyRequest request,
+            HttpServletResponse response) {
+        return authWorkflowService.verifySignup(request, response);
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<JwtResponse> refresh(HttpServletRequest request, HttpServletResponse response) {
+        return authWorkflowService.refresh(request, response);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse> logout(HttpServletRequest request, HttpServletResponse response) {
+        return authWorkflowService.logout(request, response);
     }
 }

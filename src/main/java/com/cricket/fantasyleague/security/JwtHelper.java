@@ -19,10 +19,14 @@ import io.jsonwebtoken.security.Keys;
 @Component
 public class JwtHelper {
 
-    public static final long JWT_TOKEN_VALIDITY = 24 * 60 * 60;
+    private static final String TOKEN_TYPE_CLAIM = "typ";
+    private static final String ACCESS_TOKEN_TYPE = "access";
 
     @Value("${jwt.secret}")
     private String secret;
+
+    @Value("${jwt.access-token-validity-seconds:900}")
+    private long accessTokenValiditySeconds;
 
     private Key getSigningKey() {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
@@ -34,6 +38,10 @@ public class JwtHelper {
 
     public Date getExpirationDateFromToken(String token) {
         return getClaimFromToken(token, Claims::getExpiration);
+    }
+
+    public String getTokenTypeFromToken(String token) {
+        return getClaimFromToken(token, claims -> claims.get(TOKEN_TYPE_CLAIM, String.class));
     }
 
     public <T> T getClaimFromToken(String token, Function<Claims, T> claimsResolver) {
@@ -49,7 +57,9 @@ public class JwtHelper {
     }
 
     public String generateToken(UserDetails userDetails) {
-        return doGenerateToken(new HashMap<>(), userDetails.getUsername());
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(TOKEN_TYPE_CLAIM, ACCESS_TOKEN_TYPE);
+        return doGenerateToken(claims, userDetails.getUsername());
     }
 
     private String doGenerateToken(Map<String, Object> claims, String subject) {
@@ -57,13 +67,16 @@ public class JwtHelper {
                 .setClaims(claims)
                 .setSubject(subject)
                 .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + JWT_TOKEN_VALIDITY * 1000))
+                .setExpiration(new Date(System.currentTimeMillis() + accessTokenValiditySeconds * 1000))
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
     public Boolean validateToken(String token, UserDetails userDetails) {
         final String username = getUsernameFromToken(token);
-        return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
+        final String tokenType = getTokenTypeFromToken(token);
+        return (username.equals(userDetails.getUsername())
+                && ACCESS_TOKEN_TYPE.equals(tokenType)
+                && !isTokenExpired(token));
     }
 }
