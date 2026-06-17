@@ -278,6 +278,34 @@ public class LiveMatchUserCache {
         return sum;
     }
 
+    /**
+     * Live matchpoints for one user in one match from the hot cache (no DB).
+     * Returns {@code null} when the match is not warmed in cache or the user has no row.
+     */
+    public Double getUserMatchPoints(Integer matchId, Long userId) {
+        if (matchId == null || userId == null) {
+            return null;
+        }
+        if (strategy == 1) {
+            List<UserMatchStats> list = inMemMatchStats.get(matchId);
+            if (list == null) {
+                return null;
+            }
+            for (UserMatchStats s : list) {
+                if (s.getUserid() != null && userId.equals(s.getUserid().getId())) {
+                    return s.getMatchpoints();
+                }
+            }
+            return null;
+        }
+        CacheStore<Long, CachedUserMatchStats> store = redisMatchStores.get(matchId);
+        if (store == null) {
+            return null;
+        }
+        CachedUserMatchStats dto = store.get(userId);
+        return dto != null ? dto.matchpoints() : null;
+    }
+
     public Set<Integer> getLiveMatchIds() {
         if (strategy == 1) {
             return Collections.unmodifiableSet(new HashSet<>(inMemMatchStats.keySet()));

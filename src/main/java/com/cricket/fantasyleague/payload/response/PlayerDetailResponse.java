@@ -5,10 +5,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 /**
  * Per-player line item for locked-team views (with live points).
  *
- * <p>{@code team} is the player's franchise short name (e.g. "GT", "CSK")
- * — populated by the Daily Challenge surface to render a per-player team
- * column on the my-team page. Season-long callers leave it {@code null};
- * {@code @JsonInclude(NON_NULL)} keeps the field out of those payloads.
+ * <p>{@code team} is the player's franchise short name (e.g. "GT", "CSK", "NZW").
+ * Populated from the master player cache ({@code MasterDataReadService}) for both
+ * Daily Challenge and season-long locked-team views.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record PlayerDetailResponse(
