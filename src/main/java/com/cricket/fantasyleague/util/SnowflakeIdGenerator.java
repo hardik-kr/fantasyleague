@@ -11,6 +11,10 @@ import org.springframework.stereotype.Component;
  *   [41 bits: ms since EPOCH] [10 bits: worker] [12 bits: sequence]
  *
  * Capacity: 4 096 IDs per millisecond per worker (~69 years of timestamps).
+ *
+ * <p>IDs are 64-bit and often 17–19 decimal digits. Do not shorten the layout to
+ * fit JavaScript {@code Number} — clients receive ids as JSON strings via
+ * {@link com.cricket.fantasyleague.config.JacksonConfig}.
  */
 @Component
 public class SnowflakeIdGenerator {
