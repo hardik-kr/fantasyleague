@@ -8,6 +8,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.cricket.fantasyleague.payload.ApiResponse;
 import com.cricket.fantasyleague.payload.dto.OtpVerifyRequest;
+import com.cricket.fantasyleague.payload.dto.PasswordResetCompleteRequest;
+import com.cricket.fantasyleague.payload.dto.PasswordResetInitiateRequest;
+import com.cricket.fantasyleague.payload.dto.PasswordResetVerifyRequest;
+import com.cricket.fantasyleague.payload.dto.PasswordResetVerifyResponse;
 import com.cricket.fantasyleague.payload.dto.UserDto;
 import com.cricket.fantasyleague.payload.jwtdto.JwtRequest;
 import com.cricket.fantasyleague.payload.jwtdto.JwtResponse;
@@ -54,5 +58,23 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse> logout(HttpServletRequest request, HttpServletResponse response) {
         return authWorkflowService.logout(request, response);
+    }
+
+    @PostMapping("/password-reset/initiate")
+    public ResponseEntity<ApiResponse> initiatePasswordReset(
+            @Valid @RequestBody PasswordResetInitiateRequest request) {
+        return authWorkflowService.initiatePasswordReset(request);
+    }
+
+    @PostMapping("/password-reset/verify")
+    public ResponseEntity<PasswordResetVerifyResponse> verifyPasswordReset(
+            @Valid @RequestBody PasswordResetVerifyRequest request) {
+        return authWorkflowService.verifyPasswordReset(request);
+    }
+
+    @PostMapping("/password-reset/complete")
+    public ResponseEntity<ApiResponse> completePasswordReset(
+            @Valid @RequestBody PasswordResetCompleteRequest request) {
+        return authWorkflowService.completePasswordReset(request);
     }
 }

@@ -1,6 +1,5 @@
 package com.cricket.fantasyleague.config ;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.restclient.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
@@ -13,15 +12,11 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 
 import com.cricket.fantasyleague.security.CricketServiceBearerRequestInterceptor;
-import com.cricket.fantasyleague.service.user.UserService;
 
 
 @Configuration
 public class AppConfig
 {
-    @Autowired
-    public UserService userService ;
-
     @Bean
     PasswordEncoder passwordEncoder()
     {

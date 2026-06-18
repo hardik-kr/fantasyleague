@@ -52,6 +52,28 @@ public class EmailService {
         }
     }
 
+    public void sendPasswordResetOtpEmail(String toEmail, String otp) {
+        if (dryRun) {
+            logger.info("[DRY-RUN] Password reset OTP for {} is {}", toEmail, otp);
+            return;
+        }
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true);
+
+            helper.setFrom(new InternetAddress(fromEmail, "Fantasy League"));
+            helper.setTo(toEmail);
+            helper.setSubject("Fantasy League - Password Reset OTP");
+            helper.setText(buildPasswordResetEmailBody(otp), true);
+
+            mailSender.send(message);
+            logger.info("Password reset OTP email sent to {}", toEmail);
+        } catch (MessagingException | UnsupportedEncodingException e) {
+            logger.error("Failed to send password reset OTP email to {}: {}", toEmail, e.getMessage());
+            throw new RuntimeException("Failed to send password reset email. Please try again.");
+        }
+    }
+
     private String buildOtpEmailBody(String otp) {
         return """
                 <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; \
@@ -63,6 +85,26 @@ public class EmailService {
                   <div style="text-align: center; margin: 32px 0; padding: 24px; background: #16213e; \
                 border-radius: 12px; border: 1px solid #333;">
                     <p style="color: #aaa; font-size: 12px; margin: 0 0 8px 0;">Your verification code is</p>
+                    <h2 style="color: #00e68a; font-size: 36px; letter-spacing: 8px; margin: 0;">%s</h2>
+                  </div>
+                  <p style="text-align: center; color: #888; font-size: 12px;">
+                    This code expires in 5 minutes.<br/>If you did not request this, please ignore this email.
+                  </p>
+                </div>
+                """.formatted(otp);
+    }
+
+    private String buildPasswordResetEmailBody(String otp) {
+        return """
+                <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; \
+                background: #1a1a2e; color: #ffffff; border-radius: 16px;">
+                  <h1 style="text-align: center; color: #00e68a; font-size: 28px; letter-spacing: 2px;">
+                    FANTASY LEAGUE
+                  </h1>
+                  <p style="text-align: center; color: #aaa; font-size: 14px;">Password Reset</p>
+                  <div style="text-align: center; margin: 32px 0; padding: 24px; background: #16213e; \
+                border-radius: 12px; border: 1px solid #333;">
+                    <p style="color: #aaa; font-size: 12px; margin: 0 0 8px 0;">Your reset code is</p>
                     <h2 style="color: #00e68a; font-size: 36px; letter-spacing: 8px; margin: 0;">%s</h2>
                   </div>
                   <p style="text-align: center; color: #888; font-size: 12px;">

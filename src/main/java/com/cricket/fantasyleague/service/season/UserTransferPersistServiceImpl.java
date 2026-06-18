@@ -202,6 +202,11 @@ public class UserTransferPersistServiceImpl {
         return userOverallStatsRepository.findAllByUseridIn(users);
     }
 
+    public List<UserOverallStats> findOverallStatsForUserIds(List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) return List.of();
+        return userOverallStatsRepository.findAllByUserIdIn(userIds);
+    }
+
     @Transactional
     public void lockBatch(List<UserMatchStats> matchStatsList, List<UserOverallStats> overallStatsList) {
         saveAllMatchStats(matchStatsList);

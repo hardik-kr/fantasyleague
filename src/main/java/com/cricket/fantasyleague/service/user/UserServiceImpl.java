@@ -5,14 +5,15 @@ import java.util.List;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.cricket.fantasyleague.entity.enums.UserRole;
 import com.cricket.fantasyleague.entity.table.User;
 import com.cricket.fantasyleague.entity.table.season.UserOverallStats;
 import com.cricket.fantasyleague.exception.ResourceAlreadyExist;
+import com.cricket.fantasyleague.exception.ResourceNotFoundException;
 import com.cricket.fantasyleague.payload.dto.UserDto;
 import com.cricket.fantasyleague.util.AppConstants;
 
@@ -21,11 +22,14 @@ public class UserServiceImpl implements UserService, UserDetailsService {
 
     private final UserPersistServiceImpl persistService;
     private final Integer activeLeagueId;
+    private final PasswordEncoder passwordEncoder;
 
     public UserServiceImpl(
             UserPersistServiceImpl persistService,
+            PasswordEncoder passwordEncoder,
             @Value("${fantasy.active-league-id:2}") Integer activeLeagueId) {
         this.persistService = persistService;
+        this.passwordEncoder = passwordEncoder;
         this.activeLeagueId = activeLeagueId;
     }
 
@@ -78,6 +82,16 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         return persistService.findAllUsers();
     }
 
+    @Override
+    public void updatePassword(String email, String password) {
+        User user = persistService.findByEmail(email);
+        if (user == null) {
+            throw new ResourceNotFoundException("User not found: " + email);
+        }
+        user.setPassword(passwordEncoder.encode(password));
+        persistService.saveUser(user);
+    }
+
     private User buildUserFromDto(UserDto inpuser) {
         User userobj = new User();
         userobj.setUsername(inpuser.getUsername());
@@ -85,7 +99,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         userobj.setLastname(inpuser.getLastname());
         userobj.setEmail(inpuser.getEmail());
         userobj.setFavteam(inpuser.getFavteam());
-        userobj.setPassword(new BCryptPasswordEncoder().encode(inpuser.getPassword()));
+        userobj.setPassword(passwordEncoder.encode(inpuser.getPassword()));
         userobj.setPhonenumber(inpuser.getPhonenumber());
         userobj.setRole(UserRole.USER);
         return userobj;

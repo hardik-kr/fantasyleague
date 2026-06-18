@@ -311,7 +311,8 @@ public class UserTransferServiceImpl implements UserTransferService {
                     .filter(u -> !"admin@gmail.com".equals(u.getEmail()))
                     .toList();
 
-            Map<Long, UserOverallStats> overallMap = persistService.findOverallStatsForUsers(users)
+            List<Long> batchUserIds = users.stream().map(User::getId).toList();
+            Map<Long, UserOverallStats> overallMap = persistService.findOverallStatsForUserIds(batchUserIds)
                     .stream()
                     .collect(Collectors.toMap(o -> o.getUserid().getId(), Function.identity()));
 
@@ -319,7 +320,6 @@ public class UserTransferServiceImpl implements UserTransferService {
             // committed but before drafts were cleaned up, the same users would be
             // revisited on resume. Without this check we'd insert duplicate
             // UserMatchStats rows and double-decrement booster/transfer counters.
-            List<Long> batchUserIds = users.stream().map(User::getId).toList();
             Set<Long> alreadyLockedUserIds = persistService
                     .findAlreadyLockedUserIds(currMatch, batchUserIds);
 
@@ -370,6 +370,9 @@ public class UserTransferServiceImpl implements UserTransferService {
                         overall.addUsedBooster(draft.getBoosterused());
                     }
                     overallUpdates.add(overall);
+                } else {
+                    logger.warn("lockMatchTeam: missing overall stats for userId={}, matchId={} — transfersUsed={} not decremented",
+                            user.getId(), currMatch.getId(), draft.getTransferused());
                 }
 
                 draftUpdates.add(draft);

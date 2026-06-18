@@ -13,5 +13,6 @@ public interface UserService
     void createUser(UserDto userdto) ;
     UserDetails getUserByUserName(String username) ;
     UserDetails loadUserByUsername(String username) ;
+    void updatePassword(String email, String password) ;
     List<User> getAllUser() ;
 }

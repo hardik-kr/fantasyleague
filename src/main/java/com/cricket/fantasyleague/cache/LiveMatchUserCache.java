@@ -543,15 +543,11 @@ public class LiveMatchUserCache {
             List<UserOverallStats> allOverall = new ArrayList<>(inMemOverallStats.values());
             if (!allOverall.isEmpty()) {
                 jdbcTemplate.batchUpdate(
-                        "UPDATE user_overall_stats SET totalpoints = ?, " +
-                                "boosterleft = ?, transferleft = ?, used_boosters = ? WHERE id = ?",
+                        "UPDATE user_overall_stats SET totalpoints = ? WHERE id = ?",
                         allOverall, flushBatchSize,
                         (ps, o) -> {
                             ps.setObject(1, o.getTotalpoints());
-                            ps.setObject(2, o.getBoosterleft());
-                            ps.setObject(3, o.getTransferleft());
-                            ps.setString(4, o.getUsedBoosters());
-                            ps.setLong(5, o.getId());
+                            ps.setLong(2, o.getId());
                         });
                 logger.info("Flushed {} UserOverallStats via JDBC batch (chunk={})",
                         allOverall.size(), flushBatchSize);
@@ -582,15 +578,11 @@ public class LiveMatchUserCache {
             List<CachedUserOverallStats> dtos = new ArrayList<>(redisOverallStore.values());
             if (!dtos.isEmpty()) {
                 jdbcTemplate.batchUpdate(
-                        "UPDATE user_overall_stats SET totalpoints = ?, " +
-                                "boosterleft = ?, transferleft = ?, used_boosters = ? WHERE id = ?",
+                        "UPDATE user_overall_stats SET totalpoints = ? WHERE id = ?",
                         dtos, flushBatchSize,
                         (ps, dto) -> {
                             ps.setObject(1, dto.totalpoints());
-                            ps.setObject(2, dto.boosterleft());
-                            ps.setObject(3, dto.transferleft());
-                            ps.setString(4, dto.usedBoosters());
-                            ps.setLong(5, dto.id());
+                            ps.setLong(2, dto.id());
                         });
                 logger.info("Flushed {} UserOverallStats via JDBC batch (chunk={})",
                         dtos.size(), flushBatchSize);

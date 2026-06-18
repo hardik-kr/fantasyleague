@@ -12,6 +12,10 @@ import org.springframework.stereotype.Service;
 
 import com.cricket.fantasyleague.payload.ApiResponse;
 import com.cricket.fantasyleague.payload.dto.OtpVerifyRequest;
+import com.cricket.fantasyleague.payload.dto.PasswordResetCompleteRequest;
+import com.cricket.fantasyleague.payload.dto.PasswordResetInitiateRequest;
+import com.cricket.fantasyleague.payload.dto.PasswordResetVerifyRequest;
+import com.cricket.fantasyleague.payload.dto.PasswordResetVerifyResponse;
 import com.cricket.fantasyleague.payload.dto.UserDto;
 import com.cricket.fantasyleague.payload.jwtdto.JwtRequest;
 import com.cricket.fantasyleague.payload.jwtdto.JwtResponse;
@@ -21,6 +25,7 @@ import com.cricket.fantasyleague.security.RefreshTokenService;
 import com.cricket.fantasyleague.service.otp.EmailService;
 import com.cricket.fantasyleague.service.otp.LoginAttemptService;
 import com.cricket.fantasyleague.service.otp.OtpService;
+import com.cricket.fantasyleague.service.otp.PasswordResetService;
 import com.cricket.fantasyleague.service.user.UserService;
 import com.cricket.fantasyleague.util.AppConstants;
 
@@ -40,6 +45,7 @@ public class AuthWorkflowService {
     private final LoginAttemptService loginAttemptService;
     private final AuthCookieService authCookieService;
     private final RefreshTokenService refreshTokenService;
+    private final PasswordResetService passwordResetService;
 
     public AuthWorkflowService(UserService userService,
                                AuthenticationManager manager,
@@ -48,7 +54,8 @@ public class AuthWorkflowService {
                                EmailService emailService,
                                LoginAttemptService loginAttemptService,
                                AuthCookieService authCookieService,
-                               RefreshTokenService refreshTokenService) {
+                               RefreshTokenService refreshTokenService,
+                               PasswordResetService passwordResetService) {
         this.userService = userService;
         this.manager = manager;
         this.helper = helper;
@@ -57,6 +64,7 @@ public class AuthWorkflowService {
         this.loginAttemptService = loginAttemptService;
         this.authCookieService = authCookieService;
         this.refreshTokenService = refreshTokenService;
+        this.passwordResetService = passwordResetService;
     }
 
     public ResponseEntity<JwtResponse> login(JwtRequest request, HttpServletResponse servletResponse) {
@@ -115,6 +123,32 @@ public class AuthWorkflowService {
         authCookieService.clearAuthCookies(response);
         ApiResponse apiResponse = new ApiResponse("Logged out successfully", true, HttpStatus.OK.value(), HttpStatus.OK);
         return new ResponseEntity<>(apiResponse, HttpStatus.OK);
+    }
+
+    public ResponseEntity<ApiResponse> initiatePasswordReset(PasswordResetInitiateRequest request) {
+        passwordResetService.initiate(request.getEmail());
+        ApiResponse response = new ApiResponse(
+                "If an account exists for this email, a password reset code has been sent.",
+                true,
+                HttpStatus.OK.value(),
+                HttpStatus.OK
+        );
+        return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+
+    public ResponseEntity<PasswordResetVerifyResponse> verifyPasswordReset(PasswordResetVerifyRequest request) {
+        String resetToken = passwordResetService.verify(request.getEmail(), request.getOtp());
+        return new ResponseEntity<>(new PasswordResetVerifyResponse(resetToken), HttpStatus.OK);
+    }
+
+    public ResponseEntity<ApiResponse> completePasswordReset(PasswordResetCompleteRequest request) {
+        passwordResetService.complete(
+                request.getEmail(),
+                request.getResetToken(),
+                request.getPassword(),
+                request.getConfirmPassword());
+        ApiResponse response = new ApiResponse("Password reset successfully", true, HttpStatus.OK.value(), HttpStatus.OK);
+        return new ResponseEntity<>(response, HttpStatus.OK);
     }
 
     private void doAuthenticate(String email, String password) {

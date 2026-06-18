@@ -11,6 +11,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import com.cricket.fantasyleague.entity.table.User;
 import com.cricket.fantasyleague.entity.table.season.UserOverallStats;
@@ -29,9 +31,11 @@ class UserServiceImplTest {
     @Mock
     private UserPersistServiceImpl persistService;
 
+    private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
     @Test
     void createUserInitializesTransfersFromActiveLeague() {
-        UserServiceImpl service = new UserServiceImpl(persistService, 12);
+        UserServiceImpl service = new UserServiceImpl(persistService, passwordEncoder, 12);
         UserDto dto = new UserDto();
         dto.setEmail("test@example.com");
         dto.setUsername("testuser");
@@ -48,6 +52,22 @@ class UserServiceImplTest {
 
         assertThat(statsCaptor.getValue().getTransferleft()).isEqualTo(60);
         assertThat(statsCaptor.getValue().getBoosterleft()).isEqualTo(AppConstants.FantasyPoints.TOTAL_BOOSTER);
+    }
+
+    @Test
+    void updatePasswordHashesAndPersistsExistingUser() {
+        UserServiceImpl service = new UserServiceImpl(persistService, passwordEncoder, 12);
+        User user = new User();
+        user.setEmail("test@example.com");
+        user.setPassword("old-password");
+        when(persistService.findByEmail("test@example.com")).thenReturn(user);
+
+        service.updatePassword("test@example.com", "newpass1");
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(persistService).saveUser(userCaptor.capture());
+        assertThat(userCaptor.getValue().getPassword()).isNotEqualTo("newpass1");
+        assertThat(passwordEncoder.matches("newpass1", userCaptor.getValue().getPassword())).isTrue();
     }
 
     @Test
