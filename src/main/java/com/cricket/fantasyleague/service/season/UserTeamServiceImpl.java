@@ -4,18 +4,17 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.cricket.fantasyleague.cache.LiveMatchCache;
 import com.cricket.fantasyleague.cache.LiveMatchUserCache;
+import com.cricket.fantasyleague.config.AppConfig;
 import com.cricket.fantasyleague.dao.CricketEntityMapper;
 import com.cricket.fantasyleague.dao.CricketMasterDataDao;
+import com.cricket.fantasyleague.entity.enums.Booster;
 import com.cricket.fantasyleague.entity.enums.MatchState;
 import com.cricket.fantasyleague.entity.table.Match;
 import com.cricket.fantasyleague.entity.table.Player;
@@ -54,7 +53,7 @@ public class UserTeamServiceImpl implements UserTeamService {
     private final MasterDataReadService masterDataReadService;
     private final LiveMatchCache liveMatchCache;
     private final LiveMatchUserCache liveMatchUserCache;
-    private final Set<Integer> freeTransferMatchIds;
+    private final AppConfig appConfig;
 
     private static final EnumSet<MatchState> LIVE_MATCH_STATES =
             EnumSet.of(MatchState.IN_PROGRESS, MatchState.DELAY);
@@ -70,7 +69,7 @@ public class UserTeamServiceImpl implements UserTeamService {
                                MasterDataReadService masterDataReadService,
                                LiveMatchCache liveMatchCache,
                                LiveMatchUserCache liveMatchUserCache,
-                               @Value("${fantasy.free-transfer-match-ids:}") String freeTransferMatchIdsCsv) {
+                               AppConfig appConfig) {
         this.matchService = matchService;
         this.userMatchStatsRepository = userMatchStatsRepository;
         this.userMatchStatsDraftRepository = userMatchStatsDraftRepository;
@@ -82,15 +81,7 @@ public class UserTeamServiceImpl implements UserTeamService {
         this.masterDataReadService = masterDataReadService;
         this.liveMatchCache = liveMatchCache;
         this.liveMatchUserCache = liveMatchUserCache;
-        this.freeTransferMatchIds = new HashSet<>();
-        if (freeTransferMatchIdsCsv != null && !freeTransferMatchIdsCsv.isBlank()) {
-            for (String part : freeTransferMatchIdsCsv.split(",")) {
-                String id = part.trim();
-                if (!id.isEmpty()) {
-                    this.freeTransferMatchIds.add(Integer.valueOf(id));
-                }
-            }
-        }
+        this.appConfig = appConfig;
     }
 
     @Override
@@ -100,11 +91,17 @@ public class UserTeamServiceImpl implements UserTeamService {
             return new DraftResponse("No upcoming match found",
                     null, null, null, null, null, null,
                     null, null, null, null, null, null,
-                    null, null, null, null, null, null);
+                    null, null, null, null, null, null, null);
         }
 
         String teamA = nextMatch.getTeamA() != null ? nextMatch.getTeamA().getShortName() : null;
         String teamB = nextMatch.getTeamB() != null ? nextMatch.getTeamB().getShortName() : null;
+
+        UserOverallStats overall = userOverallStatsRepository.findByUserid(user);
+        List<String> usedBoosters = overall != null
+                ? overall.getUsedBoosterSet().stream().map(Enum::name).toList()
+                : List.of();
+        Map<String, Integer> boosterLeftDetail = resolveBoosterLeftDetail(overall);
 
         UserMatchStatsDraft draft = userMatchStatsDraftRepository.findByMatchidAndUserid(nextMatch, user);
         if (draft == null) {
@@ -112,15 +109,16 @@ public class UserTeamServiceImpl implements UserTeamService {
                     nextMatch.getId(), nextMatch.getDate(), nextMatch.getTime(),
                     nextMatch.getMatchDesc(), teamA, teamB,
                     false, null, null, null, null, null,
-                    null, null, null, freeTransferMatchIds.contains(nextMatch.getId()), null, null);
+                    null,
+                    overall != null ? overall.getTransferleft() : 0,
+                    overall != null ? overall.getBoosterleft() : 0,
+                    boosterLeftDetail,
+                    appConfig.isFreeTransferMatch(nextMatch.getId()),
+                    usedBoosters,
+                    null);
         }
 
         List<PlayerBrief> playing11 = buildPlayerBriefs(draft.getPlaying11(), nextMatch.getLeagueId());
-
-        UserOverallStats overall = userOverallStatsRepository.findByUserid(user);
-        List<String> usedBoosters = overall != null
-                ? overall.getUsedBoosterSet().stream().map(Enum::name).toList()
-                : List.of();
 
         List<Integer> previousPlaying11 = null;
         Match prevMatch = matchService.findPreviousMatch(nextMatch);
@@ -143,9 +141,25 @@ public class UserTeamServiceImpl implements UserTeamService {
                 playing11,
                 overall != null ? overall.getTransferleft() : 0,
                 overall != null ? overall.getBoosterleft() : 0,
-                freeTransferMatchIds.contains(nextMatch.getId()),
+                boosterLeftDetail,
+                appConfig.isFreeTransferMatch(nextMatch.getId()),
                 usedBoosters,
                 previousPlaying11);
+    }
+
+    private Map<String, Integer> resolveBoosterLeftDetail(UserOverallStats overall) {
+        Map<String, Integer> configuredCounts = appConfig.getInitialBoosterLeftDetail();
+        if (overall == null) {
+            return configuredCounts;
+        }
+        Map<String, Integer> leftDetail = new HashMap<>();
+        for (Map.Entry<String, Integer> entry : configuredCounts.entrySet()) {
+            Booster booster = Booster.valueOf(entry.getKey());
+            int configured = Math.max(entry.getValue(), 0);
+            int used = overall.getUsedBoosterCount(booster);
+            leftDetail.put(entry.getKey(), Math.max(configured - used, 0));
+        }
+        return leftDetail;
     }
 
     @Override

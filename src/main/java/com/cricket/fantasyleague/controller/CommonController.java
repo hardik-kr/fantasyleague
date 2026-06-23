@@ -7,12 +7,15 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.cricket.fantasyleague.entity.table.User;
 import com.cricket.fantasyleague.exception.ResourceNotFoundException;
+import com.cricket.fantasyleague.payload.dto.SeasonOnboardingRequest;
 import com.cricket.fantasyleague.payload.response.MatchResponse;
 import com.cricket.fantasyleague.payload.response.PlayerMatchPointsResponse;
 import com.cricket.fantasyleague.payload.response.PlayerResponse;
@@ -22,6 +25,8 @@ import com.cricket.fantasyleague.service.api.FantasyMatchService;
 import com.cricket.fantasyleague.service.api.FantasyPlayerService;
 import com.cricket.fantasyleague.service.api.PlayerStatsQueryService;
 import com.cricket.fantasyleague.service.api.UserProfileService;
+
+import jakarta.validation.Valid;
 
 /**
  * Cross-cutting endpoints used by both Season Long and Daily Challenge.
@@ -67,6 +72,12 @@ public class CommonController {
     @GetMapping("/me")
     public ResponseEntity<UserProfileResponse> getMyProfile() {
         return ResponseEntity.ok(userProfileService.getProfile(getAuthenticatedUser()));
+    }
+
+    @PatchMapping("/me/season-onboarding")
+    public ResponseEntity<UserProfileResponse> completeSeasonOnboarding(
+            @Valid @RequestBody SeasonOnboardingRequest request) {
+        return ResponseEntity.ok(userProfileService.completeSeasonOnboarding(getAuthenticatedUser(), request));
     }
 
     @GetMapping("/players/{playerId}/points")

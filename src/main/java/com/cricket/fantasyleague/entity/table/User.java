@@ -1,5 +1,7 @@
 package com.cricket.fantasyleague.entity.table;
 
+import java.time.LocalDateTime;
+
 import com.cricket.fantasyleague.entity.enums.UserRole;
 import com.cricket.fantasyleague.util.SnowflakeIdGenerator;
 
@@ -7,6 +9,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -45,9 +48,19 @@ public class User
     @Column(nullable = false)
     private Boolean isActive = true ;
 
+    @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT FALSE")
+    private Boolean seasonOnboardingSeen = false ;
+
+    @Column(nullable = false, updatable = false, columnDefinition = "DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6)")
+    private LocalDateTime createdAt ;
+
+    @Column(nullable = false, columnDefinition = "DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)")
+    private LocalDateTime updatedAt ;
+
     public User() 
     {
         this.isActive = true ;
+        this.seasonOnboardingSeen = false ;
     }
 
     public User(String username, String firstname, String lastname, String email, String password,
@@ -63,6 +76,7 @@ public class User
         this.favteam = favteam;
         this.role = role;
         this.isActive = true;
+        this.seasonOnboardingSeen = false;
     }
 
     @PrePersist
@@ -70,5 +84,23 @@ public class User
         if (this.id == null) {
             this.id = SnowflakeIdGenerator.generate();
         }
+        if (this.isActive == null) {
+            this.isActive = true;
+        }
+        if (this.seasonOnboardingSeen == null) {
+            this.seasonOnboardingSeen = false;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if (this.createdAt == null) {
+            this.createdAt = now;
+        }
+        if (this.updatedAt == null) {
+            this.updatedAt = now;
+        }
+    }
+
+    @PreUpdate
+    private void touchUpdatedAt() {
+        this.updatedAt = LocalDateTime.now();
     }
 }

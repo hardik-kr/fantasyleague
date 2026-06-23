@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Configuration;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -27,6 +28,13 @@ public class JacksonConfig {
         module.addSerializer(Long.TYPE, ToStringSerializer.instance);
         module.addDeserializer(Long.class, new LongDeserializer());
         return module;
+    }
+
+    @Bean
+    public ObjectMapper objectMapper(SimpleModule longAsStringModule) {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(longAsStringModule);
+        return mapper;
     }
 
     private static final class LongDeserializer extends StdDeserializer<Long> {

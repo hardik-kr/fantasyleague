@@ -7,6 +7,7 @@ public record UserProfileResponse(
         String lastname,
         String email,
         String favteam,
+        Boolean seasonOnboardingSeen,
         Double totalPoints,
         Integer boosterLeft,
         Integer transferLeft

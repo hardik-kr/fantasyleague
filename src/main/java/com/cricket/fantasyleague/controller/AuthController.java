@@ -1,11 +1,13 @@
 package com.cricket.fantasyleague.controller;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.cricket.fantasyleague.config.AppConfig;
 import com.cricket.fantasyleague.payload.ApiResponse;
 import com.cricket.fantasyleague.payload.dto.OtpVerifyRequest;
 import com.cricket.fantasyleague.payload.dto.PasswordResetCompleteRequest;
@@ -15,6 +17,7 @@ import com.cricket.fantasyleague.payload.dto.PasswordResetVerifyResponse;
 import com.cricket.fantasyleague.payload.dto.UserDto;
 import com.cricket.fantasyleague.payload.jwtdto.JwtRequest;
 import com.cricket.fantasyleague.payload.jwtdto.JwtResponse;
+import com.cricket.fantasyleague.payload.response.AppConfigResponse;
 import com.cricket.fantasyleague.service.workflow.AuthWorkflowService;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,9 +29,22 @@ import jakarta.validation.Valid;
 public class AuthController {
 
     private final AuthWorkflowService authWorkflowService;
+    private final AppConfig appConfig;
 
-    public AuthController(AuthWorkflowService authWorkflowService) {
+    public AuthController(AuthWorkflowService authWorkflowService, AppConfig appConfig) {
         this.authWorkflowService = authWorkflowService;
+        this.appConfig = appConfig;
+    }
+
+    @GetMapping("/config")
+    public ResponseEntity<AppConfigResponse> getConfig() {
+        return ResponseEntity.ok(new AppConfigResponse(
+                appConfig.getActiveLeagueId(),
+                appConfig.getName(),
+                appConfig.getYear(),
+                appConfig.getStatus(),
+                appConfig.getTotalTransfer(),
+                appConfig.getTotalBooster()));
     }
 
     @PostMapping("/login")

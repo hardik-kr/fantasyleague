@@ -1,7 +1,7 @@
 package com.cricket.fantasyleague.entity.table.season;
 
-import java.util.Arrays;
-import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -56,24 +56,75 @@ public class UserOverallStats
     }
 
     public Set<Booster> getUsedBoosterSet() {
-        if (usedBoosters == null || usedBoosters.isBlank()) {
-            return Collections.emptySet();
-        }
-        return Arrays.stream(usedBoosters.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .map(Booster::valueOf)
+        return getUsedBoosterCountMap().entrySet().stream()
+                .filter(entry -> entry.getValue() > 0)
+                .map(Map.Entry::getKey)
                 .collect(Collectors.toSet());
     }
 
     public void addUsedBooster(Booster booster) {
-        if (booster == null) return;
-        Set<Booster> current = new java.util.HashSet<>(getUsedBoosterSet());
-        current.add(booster);
-        this.usedBoosters = current.stream()
-                .map(Booster::name)
-                .sorted()
-                .collect(Collectors.joining(","));
+        incrementUsedBooster(booster);
+    }
+
+    public Map<Booster, Integer> getUsedBoosterCountMap() {
+        Map<Booster, Integer> counts = new LinkedHashMap<>();
+        for (Booster booster : Booster.values()) {
+            counts.put(booster, 0);
+        }
+
+        if (usedBoosters == null || usedBoosters.isBlank()) {
+            return counts;
+        }
+
+        String value = usedBoosters.trim();
+        if (value.matches("[0-9a-zA-Z]+") && value.length() <= Booster.values().length) {
+            Booster[] boosters = Booster.values();
+            for (int i = 0; i < value.length() && i < boosters.length; i++) {
+                counts.put(boosters[i], Math.max(Character.digit(value.charAt(i), 36), 0));
+            }
+            return counts;
+        }
+
+        for (String part : value.split(",")) {
+            String token = part.trim();
+            if (token.isEmpty()) {
+                continue;
+            }
+            String[] pieces = token.split(":", 2);
+            try {
+                Booster booster = Booster.valueOf(pieces[0].trim());
+                int count = pieces.length > 1 ? Integer.parseInt(pieces[1].trim()) : 1;
+                counts.put(booster, Math.max(count, 0));
+            } catch (IllegalArgumentException ignored) {
+                // Ignore malformed legacy values instead of blocking login/draft load.
+            }
+        }
+        return counts;
+    }
+
+    public int getUsedBoosterCount(Booster booster) {
+        if (booster == null) {
+            return 0;
+        }
+        return Math.max(getUsedBoosterCountMap().getOrDefault(booster, 0), 0);
+    }
+
+    public void incrementUsedBooster(Booster booster) {
+        if (booster == null) {
+            return;
+        }
+        Map<Booster, Integer> counts = getUsedBoosterCountMap();
+        counts.put(booster, Math.max(counts.getOrDefault(booster, 0), 0) + 1);
+        this.usedBoosters = toCompactUsedBoosters(counts);
+    }
+
+    private String toCompactUsedBoosters(Map<Booster, Integer> counts) {
+        StringBuilder value = new StringBuilder(Booster.values().length);
+        for (Booster booster : Booster.values()) {
+            int count = Math.max(counts.getOrDefault(booster, 0), 0);
+            value.append(Character.forDigit(Math.min(count, 35), 36));
+        }
+        return value.toString();
     }
 
     @PrePersist

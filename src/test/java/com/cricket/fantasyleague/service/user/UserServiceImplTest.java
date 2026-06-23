@@ -14,11 +14,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import com.cricket.fantasyleague.config.AppConfig;
 import com.cricket.fantasyleague.entity.table.User;
 import com.cricket.fantasyleague.entity.table.season.UserOverallStats;
 import com.cricket.fantasyleague.payload.dto.UserDto;
-import com.cricket.fantasyleague.util.AppConstants;
 import com.cricket.fantasyleague.util.SnowflakeIdGenerator;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceImplTest {
@@ -32,10 +33,26 @@ class UserServiceImplTest {
     private UserPersistServiceImpl persistService;
 
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void createUserInitializesTransfersFromActiveLeague() {
-        UserServiceImpl service = new UserServiceImpl(persistService, passwordEncoder, 12);
+    void createUserInitializesTransfersAndBoostersFromAppConfig() throws Exception {
+        AppConfig appConfig = new AppConfig();
+        appConfig.load(new AppConfig.Snapshot(
+                12,
+                "ICC Women's T20 World Cup",
+                2026,
+                "ACTIVE",
+                60,
+                objectMapper.readTree("""
+                        [
+                          {"DOUBLE_UP":{"count":2,"active":true}},
+                          {"POWER_BATTER":{"count":1,"active":false}},
+                          {"POWER_BOWLER":{"count":3,"active":true}}
+                        ]
+                        """),
+                java.util.Set.of()));
+        UserServiceImpl service = new UserServiceImpl(persistService, passwordEncoder, appConfig);
         UserDto dto = new UserDto();
         dto.setEmail("test@example.com");
         dto.setUsername("testuser");
@@ -51,12 +68,14 @@ class UserServiceImplTest {
         verify(persistService).saveOverallStats(statsCaptor.capture());
 
         assertThat(statsCaptor.getValue().getTransferleft()).isEqualTo(60);
-        assertThat(statsCaptor.getValue().getBoosterleft()).isEqualTo(AppConstants.FantasyPoints.TOTAL_BOOSTER);
+        assertThat(statsCaptor.getValue().getBoosterleft()).isEqualTo(5);
+        assertThat(statsCaptor.getValue().getUsedBoosters()).isNull();
+        assertThat(statsCaptor.getValue().getUsedBoosterCountMap().values()).containsOnly(0);
     }
 
     @Test
     void updatePasswordHashesAndPersistsExistingUser() {
-        UserServiceImpl service = new UserServiceImpl(persistService, passwordEncoder, 12);
+        UserServiceImpl service = new UserServiceImpl(persistService, passwordEncoder, new AppConfig());
         User user = new User();
         user.setEmail("test@example.com");
         user.setPassword("old-password");
@@ -70,11 +89,4 @@ class UserServiceImplTest {
         assertThat(passwordEncoder.matches("newpass1", userCaptor.getValue().getPassword())).isTrue();
     }
 
-    @Test
-    void totalTransfersAreConfiguredByLeague() {
-        assertThat(AppConstants.FantasyPoints.totalTransferForLeague(2)).isEqualTo(120);
-        assertThat(AppConstants.FantasyPoints.totalTransferForLeague(12)).isEqualTo(60);
-        assertThat(AppConstants.FantasyPoints.totalTransferForLeague(3)).isEqualTo(40);
-        assertThat(AppConstants.FantasyPoints.totalTransferForLeague(999)).isEqualTo(120);
-    }
 }

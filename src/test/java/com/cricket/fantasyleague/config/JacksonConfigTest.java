@@ -27,6 +27,7 @@ class JacksonConfigTest {
                 "KUMAR",
                 "hardik@example.com",
                 "INDW",
+                true,
                 421.0,
                 7,
                 55);

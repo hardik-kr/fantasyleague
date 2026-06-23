@@ -13,6 +13,7 @@ import com.cricket.fantasyleague.service.user.UserPersistServiceImpl;
 public class Initialization implements CommandLineRunner {
 
     private final UserPersistServiceImpl userPersistService;
+    private final AppConfigLoader appConfigLoader;
 
     @Value("${admin.username}")
     private String adminUsername;
@@ -26,12 +27,18 @@ public class Initialization implements CommandLineRunner {
     @Value("${admin.password}")
     private String adminPassword;
 
-    public Initialization(UserPersistServiceImpl userPersistService) {
+    public Initialization(UserPersistServiceImpl userPersistService, AppConfigLoader appConfigLoader) {
         this.userPersistService = userPersistService;
+        this.appConfigLoader = appConfigLoader;
     }
 
     @Override
     public void run(String... args) throws Exception {
+        initializeAdminUser();
+        appConfigLoader.loadConfig();
+    }
+
+    private void initializeAdminUser() {
         User adminuser = userPersistService.findByRole(UserRole.ADMIN);
         if (adminuser == null) {
             adminuser = new User();

@@ -43,7 +43,6 @@ public class UserDto implements UserDetails
     @Size(min = 10, max = 10, message = "Phone number must be length 10")
     private String phonenumber ;
 
-    @NotEmpty(message = "Please enter your favourite team")
     private String favteam ;
 
     private UserRole role ;

@@ -17,6 +17,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.cricket.fantasyleague.config.AppConfig;
 import com.cricket.fantasyleague.entity.enums.Booster;
 import com.cricket.fantasyleague.entity.enums.PlayerType;
 import com.cricket.fantasyleague.dao.CricketMasterDataDao;
@@ -43,7 +44,7 @@ public class UserTransferServiceImpl implements UserTransferService {
     private final MatchService matchService;
     private final FantasyPlayerConfigRepository fantasyPlayerConfigRepository;
     private final CricketMasterDataDao cricketDao;
-    private final Set<Integer> freeTransferMatchIds;
+    private final AppConfig appConfig;
     private final int lockBatchSize;
     private final long lockBatchDelayMs;
 
@@ -51,25 +52,16 @@ public class UserTransferServiceImpl implements UserTransferService {
                                    MatchService matchService,
                                    FantasyPlayerConfigRepository fantasyPlayerConfigRepository,
                                    CricketMasterDataDao cricketDao,
-                                   @Value("${fantasy.free-transfer-match-ids:}") String freeTransferMatchIdsCsv,
+                                   AppConfig appConfig,
                                    @Value("${fantasy.lock.batch-size:5000}") int lockBatchSize,
                                    @Value("${fantasy.lock.batch-delay-ms:1000}") long lockBatchDelayMs) {
         this.persistService = persistService;
         this.matchService = matchService;
         this.fantasyPlayerConfigRepository = fantasyPlayerConfigRepository;
         this.cricketDao = cricketDao;
-        this.freeTransferMatchIds = new HashSet<>();
-        if (freeTransferMatchIdsCsv != null && !freeTransferMatchIdsCsv.isBlank()) {
-            for (String part : freeTransferMatchIdsCsv.split(",")) {
-                String id = part.trim();
-                if (!id.isEmpty()) {
-                    this.freeTransferMatchIds.add(Integer.valueOf(id));
-                }
-            }
-        }
+        this.appConfig = appConfig;
         this.lockBatchSize = lockBatchSize;
         this.lockBatchDelayMs = lockBatchDelayMs;
-        logger.info("Free transfer match IDs: {}", this.freeTransferMatchIds);
         logger.info("Lock batch config: size={}, delay={}ms", lockBatchSize, lockBatchDelayMs);
     }
 
@@ -82,20 +74,23 @@ public class UserTransferServiceImpl implements UserTransferService {
         Match prevMatch = matchService.findPreviousMatch(nextMatch);
 
         int substitution = 0;
-        boolean isFreeTransferWindow = freeTransferMatchIds.contains(nextMatch.getId());
+        boolean isFreeTransferWindow = appConfig.isFreeTransferMatch(nextMatch.getId());
         if (isFreeTransferWindow && userTransferDto.getBoosterid() == Booster.SUPER_TRANSFER) {
             throw new InvalidTeamException("SUPER_TRANSFER booster cannot be used during a free transfer window");
         }
         if (userTransferDto.getBoosterid() != null) {
+            if (!appConfig.isBoosterActive(userTransferDto.getBoosterid())) {
+                throw new InvalidTeamException("Booster " + userTransferDto.getBoosterid() + " is not active for this tournament");
+            }
             UserOverallStats overallStats = persistService.findOverallStatsByUser(userObj);
             int boostersLeft = overallStats != null && overallStats.getBoosterleft() != null
                     ? overallStats.getBoosterleft() : 0;
             if (boostersLeft <= 0) {
                 throw new InvalidTeamException("No boosters remaining for this season");
             }
-            if (overallStats != null && overallStats.getUsedBoosterSet().contains(userTransferDto.getBoosterid())) {
-                throw new InvalidTeamException(
-                        "Booster " + userTransferDto.getBoosterid() + " has already been used in a previous match");
+            int boosterTypeLeft = getBoosterTypeLeft(overallStats, userTransferDto.getBoosterid());
+            if (boosterTypeLeft <= 0) {
+                throw new InvalidTeamException("No " + userTransferDto.getBoosterid() + " boosters remaining for this season");
             }
         }
         boolean isSuperTransfer = userTransferDto.getBoosterid() == Booster.SUPER_TRANSFER;
@@ -291,7 +286,7 @@ public class UserTransferServiceImpl implements UserTransferService {
             return;
         }
 
-        boolean freeWindow = freeTransferMatchIds.contains(currMatch.getId());
+        boolean freeWindow = appConfig.isFreeTransferMatch(currMatch.getId());
         int totalPages = (int) Math.ceil((double) totalDrafts / lockBatchSize);
         int totalLocked = 0;
 
@@ -419,5 +414,14 @@ public class UserTransferServiceImpl implements UserTransferService {
             logger.info("lockMatchTeam complete: matchId={}, locked={}, no next match — drafts deleted",
                     currMatch.getId(), totalLocked);
         }
+    }
+
+    private int getBoosterTypeLeft(UserOverallStats overallStats, Booster booster) {
+        if (booster == null) {
+            return 0;
+        }
+        int configuredCount = appConfig.getConfiguredBoosterCount(booster);
+        int usedCount = overallStats != null ? overallStats.getUsedBoosterCount(booster) : 0;
+        return Math.max(configuredCount - usedCount, 0);
     }
 }
